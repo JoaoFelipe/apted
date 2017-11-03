@@ -31,14 +31,6 @@ from .node_indexer import NodeInfo
 
 LEFT, RIGHT, INNER = 0, 1, 2
 
-old_print = print
-def new_print(*args):
-    if not new_print.disable:
-        old_print(*args)
-new_print.disable = 0
-print = new_print
-
-
 
 def get(matrix, a, b, swap, da=0, db=0):
     """Get value from matrix[a][b] or matrix[b][a], according to swap"""
@@ -368,14 +360,8 @@ class SinglePathFunction(object):
 
         result = 0
 
-        print.disable = 999
         # for v in F on the path from dumme E to root
         for vparent, v in self.it1.walk_up(path_leaf, self.current1):
-            print("======================================")
-            # print("D", self.delta)
-            # print("T", self.t)
-            # print("S", self.s)
-            # print("Q", self.q)
             self.end, self.start = vparent, v
             # start is v; end is p(v)
             end_pre_ltr, end_pre_rtl = vparent.pre_ltr, vparent.pre_rtl
@@ -387,7 +373,6 @@ class SinglePathFunction(object):
 
             # Deal with nodes to the left of the path
             if path == RIGHT or path == INNER and left_part:
-                print("Left")
                 if v:
                     rf_first = start_pre_rtl
                     lf_first = start_pre_ltr - 1
@@ -419,14 +404,10 @@ class SinglePathFunction(object):
                 self.calculate_dist = True
 
                 #l = a. r = b
-                temp = print.disable
-                print.disable = 1
                 result = self.loop_b(lf_range, rf_first, rf_last, RIGHT, 1)
-                print.disable = temp
 
             # Deal with nodes to the right of the path
             if path == LEFT or path == INNER and (right_part or neither):
-                print("Right")
                 if v:
                     lf_first = end_pre_ltr + 1
                     rf_first = start_pre_rtl - 1
@@ -460,8 +441,6 @@ class SinglePathFunction(object):
 
                 #r = a. l = b
                 result = self.loop_b(rf_range, lf_first, lf_last, LEFT, 0)
-            print.disable = max(print.disable - 1, 0)
-        print.disable = 0
         return result
 
     def loop_b(self, af_range, bf_first, bf_last, path, delta):
@@ -485,15 +464,7 @@ class SinglePathFunction(object):
 
         g_index = atb(current2)
 
-        temp = print.disable
-        print.disable = max(temp, 0)
-
-        for bg in range(bg_first, bg_last - 1, -1):  #g_index Reversed preorder bta
-            # print("-------------------------------------")
-            # print("D", self.delta)
-            # print("T", self.t)
-            # print("S", self.s)
-            # print("Q", self.q)
+        for bg in range(bg_first, bg_last - 1, -1):  # Reversed preorder bta
             # bg: pre_rtl_2/pre_ltr_2
             bg_info = bta_2[bg]
             ag_first = atb(bg_info)
@@ -506,17 +477,13 @@ class SinglePathFunction(object):
             if path_type == path:
                 if bg_info is current2 or bg_info is not bmost_child(bg_parent):
                     ag_last = ag_first
-                    print("a", ag_first, ag_last, bg_info is current2, bg_info is not bmost_child(bg_parent))
                 else:
                     ag_last = atb(amost_child(bg_parent))
-                    print("b", ag_first, ag_last)
             else:
                 last = current2
                 if bg_info is not current2 and delta: # flag
                     last = amost_child(last)
                 ag_last = atb(last)
-                print("c", ag_first, ag_last)
-            print(bg, bg_info.node, bg_last)
             """
 
             if path_type == path:
@@ -531,9 +498,7 @@ class SinglePathFunction(object):
 
             # B: {rw} \\cup left(G',rw) in reverse LTR preorder
             # B': {lw} \\cup right(G',lw) in reverse RTL preorder
-            # print("ag", ag_first, ag_last)
             ag_range = list(self.each_ft(ag_first, ag_last))
-            # print("ft", self.ft)
             self.size1, self.cost1 = tmp_size1, tmp_cost1
 
             result = self.loop_c(
@@ -544,11 +509,7 @@ class SinglePathFunction(object):
                 af_range, ag_range, bg,
                 bg > bg_last and bg_info is bmost_child(bg_parent), bg_parent
             )
-            print.disable = max(temp, print.disable - 1)
 
-
-        print("endB", result)
-        print.disable = temp
         return result
 
     def update_delta(self, af_range, ag_range, bg, is_bmost_child, bg_parent):
@@ -562,19 +523,14 @@ class SinglePathFunction(object):
         af_last = af_range[-1]
 
         # if bg is rightmost/leftmost child of p(bg)
-        print("is_bmost_child", is_bmost_child)
         if is_bmost_child:
             amost = self.atb(bg_parent) + 1
-            print("pre, a_part", self.pre_condition, self.a_part)
             if self.pre_condition:
                 if self.a_part:
                     a, b = self.swap(end.pre_ltr, bg_parent.pre_ltr)
-                    print("a_part", a, b)
                     delta[a][b] = s[af_last + 1 - off1][amost - doff2]
-                print("b", end.pre_ltr, end_parent.pre_ltr, end_parent.rightmost.pre_ltr, end_parent.leftmost.pre_ltr)
                 if end_parent and end is end_parent.rightmost is end_parent.leftmost:
                     a, b = self.swap(end_parent.pre_ltr, bg_parent.pre_ltr)
-                    print("b_part", a, b)
                     delta[a][b] = s[af_last - off1][amost - doff2]
             # B: for node lv in left(F_p(v), v) \\cup lv_last in reverse LTR
             # B': for node rv in right(F_p(v), v) \\cup {p(v)}
@@ -603,9 +559,6 @@ class SinglePathFunction(object):
         swap, delta = self.swap, self.delta
         result = 0
         af_last = af_range[-1]
-
-        temp = print.disable
-        print.disable = max(temp, 0)
 
 
         for af in af_range:
@@ -672,14 +625,9 @@ class SinglePathFunction(object):
             af_pre = af_info.pre_ltr
             self.sp3_pre = lambda bg_pre: get(delta, af_pre, bg_pre, swap)
 
-            print("bg off", bg, loff2, roff2)
 
             result = self.loop_d(self.s[af - off1], atb_2, ag_range, af_node)
-            print("S", self.s)
-            print.disable = max(temp, print.disable - 1)
 
-        print("endC", result)
-        print.disable = temp
         return result
 
     def loop_d(self, swrite, atb_2, ag_range, f_node):
@@ -687,26 +635,20 @@ class SinglePathFunction(object):
         D: foreach node lw in {rw} \\cup left(G', rw) in reverse LTR preorder
         D': foreach node rw in {lw} \\cup rigth(G', lw) in reverse RTL preorder
         """
-        temp = print.disable
-        print.disable = max(temp, 0)
         doff2 = self.it2_doff
         result = 0
         iterator = iter(ag_range)
         # First iteration
         ag = next(iterator)
-        print("ag", ag)
         ag_info = atb_2[ag]
         ag_node = ag_info.node
         self.cost2 += self.sum_ins_cost(ag_info)
         result = swrite[ag - doff2] = self.calculate_min_loop_d(
             ag, ag_info, ag_node, f_node
         )
-        print("s", ag, doff2, result)
         self.counter += 1
         self.sp2_func = self.sp2_func_after
         self.sp3_func = self.sp3_func_after
-        print("-it\n")
-        print.disable = max(temp, print.disable - 1)
 
         # Other iterations
         for ag in iterator:
@@ -716,15 +658,10 @@ class SinglePathFunction(object):
             result = swrite[ag - doff2] = self.calculate_min_loop_d(
                 ag, ag_info, ag_node, f_node
             )
-            print("s'", ag, doff2, result)
 
             self.counter += 1
-            print("-it'\n")
-            print.disable = max(temp, print.disable - 1)
 
-        print("endD", result)
 
-        print.disable = temp
         return result
 
     def calculate_min_loop_d(self, index, g_info, g_node, f_node):
@@ -733,24 +670,6 @@ class SinglePathFunction(object):
         Index is g_info.pre_ltr in Loop D
               or g_info.pre_rtl in Loop D'
         """
-
-        def debug(t, x):
-            print(t, x)
-            return x
-
-        values = (
-            (debug("sp1", debug("sp1_func", self.sp1_func(index)) +
-             debug("sp1_delete", self.delete(g_node))), 1),
-            (debug("sp2", self.sp2_func(index) + self.insert(g_node)), 2),
-            (debug("sp3", debug("sp3_pre", self.sp3_pre(g_info.pre_ltr)) +
-             debug("sp3_func", self.sp3_func(index, g_info)) +
-             debug("sp3_rename", self.rename(f_node, g_node))), 3),
-        )
-        print("op", f_node, g_node)
-        res = min(values)
-        print("usado", res[1])
-        return res[0]
-
         return min(
             self.sp1_func(index) + self.delete(g_node),
             self.sp2_func(index) + self.insert(g_node),
