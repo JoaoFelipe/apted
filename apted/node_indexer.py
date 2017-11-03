@@ -406,6 +406,13 @@ class NodeInfo(object):
         """First leaf node to the right of this node
         See [1, Section 8.4]."""
 
+        self.lnc = self.EMPTY
+        self.fnc = self.EMPTY
+        self.ftc = self.EMPTY
+        self.ln_in_use = None
+        """Current ln node. It changes during the execution"""
+
+
         self.lld = self.EMPTY
         """Leftmost leaf descendant of this node"""
 
@@ -420,6 +427,7 @@ class NodeInfo(object):
 
         self.fake_child = None
         """Overrides leftmost and rightmost child"""
+
 
     def __bool__(self):
         return bool(self.node)

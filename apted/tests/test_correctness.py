@@ -29,11 +29,14 @@ import os
 
 from ..helpers import Tree
 from ..apted import APTED
+from ..single_path_functions import UseOnlySPFA
 
 def test_factory(test):
     """Creates testcase for test dict"""
     tree1 = Tree.from_text(test["t1"])
     tree2 = Tree.from_text(test["t2"])
+
+
     class TestCorrectness(unittest.TestCase):
         """Correctness unit tests of distance and mapping computation."""
         def test_parsing_bracket_notation(self):
@@ -54,6 +57,13 @@ def test_factory(test):
         def test_distance_unit_cost_spf_r(self):
             apted = APTED(tree1, tree2)
             self.assertEqual(test["d"], apted.compute_edit_distance_spf_test(1))
+
+        def test_distance_unit_cost_spf_a(self):
+            apted = APTED(tree1, tree2, spf=UseOnlySPFA)
+            self.assertEqual(test["d"], apted.compute_edit_distance())
+
+            apted = APTED(tree2, tree1, spf=UseOnlySPFA)
+            self.assertEqual(test["d"], apted.compute_edit_distance())
 
         def test_mapping_cost_unit(self):
             apted = APTED(tree1, tree2)

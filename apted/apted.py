@@ -30,6 +30,7 @@ from .helpers import Config
 from .node_indexer import NodeIndexer
 from .single_path_functions import spf1, SinglePathFunction, LEFT, RIGHT, INNER
 # pylint: disable=invalid-name
+# pylint: disable=fixme
 
 class Cost(object):
     """Represents a Cost for opt strategy calculation"""
@@ -66,41 +67,33 @@ class APTED(object):
     """
     # pylint: disable=too-many-instance-attributes
 
-    def __init__(self, tree1, tree2, config=None):
+    def __init__(self, tree1, tree2, config=None, spf=SinglePathFunction):
+        # Config object that specifies how to calculate the edit distance
         self.config = config or Config()
-        """Config object that specifies how to calculate the edit distance"""
 
+        # Single path function class
+        self.spf = spf
+
+        # The distance matrix [1, Sections 3.4,8.2,8.3]
+        # Used to store intermediate distances between pairs of subtrees
         self.delta = []
-        """The distance matrix [1, Sections 3.4,8.2,8.3]
-        Used to store intermediate distances between pairs of subtrees"""
 
+        # One of distance arrays to store intermediate distances in spfA.
+        # TODO: Verify if other spf-local arrays are initialised within spf.
+        # If yes, move q to spf to - then, an offset has to be used to access it
         self.q = []
-        """One of distance arrays to store intermediate distances in spfA.
-        TODO: Verify if other spf-local arrays are initialised within spf.
-        If yes, move q to spf to - then, an offset has to be used to access it
-        """
 
-        self.fn = []
-        """Array used in the algorithm before [1]. Using it does not change
-        the complexity.
-        TODO: Do not use it [1, Section 8.4]."""
-
-        self.ft = []
-        """Array used in the algorithm before [1]. Using it does not change
-        the complexity.
-        TODO: Do not use it [1, Section 8.4]."""
-
+        # Stores the number of subproblems encountered while computing the
+        # distance. See [1, Section 10].
         self.counter = 0
-        """Stores the number of subproblems encountered while computing the
-        distance
-        See [1, Section 10]."""
 
+        # Stores the indexes of the first input tree
         self.it1 = NodeIndexer(tree1, self.config)
-        """Stores the indexes of the first input tree"""
 
+        # Stores the indexes of the second input tree
         self.it2 = NodeIndexer(tree2, self.config)
-        """Stores the indexes of the second input tree"""
 
+        # Stores the result
         self.result = None
 
 
@@ -151,9 +144,6 @@ class APTED(object):
         max_size = max(it1.tree_size, it2.tree_size) + 1
         # todo: Move q initialzation to spfA
         self.q = [0.0] * max_size
-        # todo: Do not use fn and ft arrays [1, Section 8.4]
-        self.fn = [0] * (max_size + 1)
-        self.ft = [0] * (max_size + 1)
         # Computer subtree distances without the root nodes when one of
         # the subtrees is a single node
 
@@ -411,7 +401,7 @@ class APTED(object):
         # input trees. Used for accessing delta array and deciding on the
         # edit operation. See [1, Section 3.4].
 
-        return SinglePathFunction(
+        return self.spf(
             it_f, it_s, self, node_id, strategy, reverse
         )()
 

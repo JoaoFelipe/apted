@@ -1,3 +1,26 @@
+#
+# The MIT License
+#
+# Copyright 2017 Joao Felipe Pimentel
+
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
 """Helpers for APTED. You can have your own version of theses classes with the
 same interface"""
 
@@ -9,7 +32,6 @@ from collections import deque
 
 class Config(object):
     """Algorithm configuration"""
-
 
     def delete(self, node):
         """Calculates the cost of deleting a node"""
@@ -32,7 +54,6 @@ class Config(object):
 class PerEditOperationConfig(Config):
     """Algorithm configuration"""
 
-
     def __init__(self, del_cost, ins_cost, ren_cost):
         self.del_cost = del_cost
         self.ins_cost = ins_cost
@@ -54,19 +75,13 @@ class PerEditOperationConfig(Config):
             self.ren_cost
         )
 
+
 class Tree(object):
     """Represents a Tree Node"""
 
     def __init__(self, name, *children):
         self.name = name
         self.children = list(children)
-
-    def show(self, ident=0):
-        """Show tree using vertical space"""
-        result = "." * ident + str(self.name)
-        for child in self.children:
-            result += "\n" + child.show(ident + 2)
-        return result
 
     def bracket(self):
         """Show tree using brackets notation"""
@@ -80,7 +95,13 @@ class Tree(object):
 
     @classmethod
     def from_text(cls, text):
-        """Create tree from bracket notation"""
+        """Create tree from bracket notation
+
+        Bracket notation encodes the trees with nested parentheses, for example,
+        in tree {A{B{X}{Y}{F}}{C}} the root node has label A and two children
+        with labels B and C. Node with label B has three children with labels
+        X, Y, F.
+        """
         tree_stack = []
         stack = []
         for letter in text:
