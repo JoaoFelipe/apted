@@ -372,54 +372,35 @@ class APTED(object):
 
         Return the tree edit distance between the source and destination trees.
         """
-        #global indent
         it1, it2 = self.it1, self.it2
         subtree1, subtree2 = it1.current_node, it2.current_node
-        #print(indent, "gted", subtree1.pre_ltr, subtree2.pre_ltr)
-        #indent += "  "
-        #cindent = indent
 
         if subtree1.size == 1 or subtree2.size == 1:  # Use spf1
-            res = spf1(it1, it2, self.config, subtree1, subtree2)
-            #print(cindent, "=", res, "(spf1)")
-            return res
+            return spf1(it1, it2, self.config, subtree1, subtree2)
 
         path_id = int(self.delta[subtree1.pre_ltr][subtree2.pre_ltr])
         node_id = abs(path_id) - 1
 
         if node_id < it1.tree_size:  # Apply on subtree 1
-            #print(cindent, "T1")
-            res = self.sub_gted(it1, it2, subtree1, path_id, node_id, False)
-            #print(cindent, "=", res, "(T1)")
-            return res
-        # Apply on subtree 2
-        #print(cindent, "T2")
+            return self.sub_gted(it1, it2, subtree1, path_id, node_id, False)
 
+        # Apply on subtree 2
         node_id -= it1.tree_size
-        res = self.sub_gted(it2, it1, subtree2, path_id, node_id, True)
-        #print(cindent, "=", res, "(T2)")
-        return res
+        return self.sub_gted(it2, it1, subtree2, path_id, node_id, True)
 
     def sub_gted(self, it_f, it_s, subtree_f, path_id, node_id, reverse=False):
         """Apply gted to subtree"""
         # pylint: disable=too-many-arguments
-        #global indent
-
         size = self.it1.tree_size
 
         strategy = self.get_strategy_path_type(path_id, size, subtree_f)
-        #print(indent, "strategy", strategy)
         current = it_f.pre_ltr_info[node_id]
 
         for parent, last in it_f.traverse_up(current, subtree_f):
             for child in parent.children:
                 if child is not last:
                     it_f.current_index = child.pre_ltr
-                    #cindent = indent
                     self.gted()
-                    #indent = cindent
-
-        #print("--", path_id)
 
         # todo: Move this property away from node indexer and pass
         # directly to spfs.
@@ -430,7 +411,6 @@ class APTED(object):
         # input trees. Used for accessing delta array and deciding on the
         # edit operation. See [1, Section 3.4].
 
-        #print("D", self.delta)
         return SinglePathFunction(
             it_f, it_s, self, node_id, strategy, reverse
         )()
@@ -607,5 +587,3 @@ class APTED(object):
             else:
                 cost += rename(post_ltr_1[row - 1].node, post_ltr_2[col - 1].node)
         return cost
-
-#indent=""
