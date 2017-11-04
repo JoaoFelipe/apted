@@ -24,12 +24,20 @@
 """Single path functions implementations"""
 from __future__ import (absolute_import, division)
 
-from itertools import chain
+import itertools
 from numpy import zeros
-from .node_indexer import NodeInfo
-
+from itertools import chain
 
 LEFT, RIGHT, INNER = 0, 1, 2
+
+
+def combine(*args):
+    """Combine tuples"""
+    # pylint: disable=invalid-name
+    sv0, sv1, sv2 = 0, -1, []
+    for v0, v1, v2 in args:
+        sv0, sv1, sv2 = v0 + sv0, v1, chain(sv2, v2)
+    return (sv0, sv1, sv2)
 
 
 def get(matrix, a, b, swap, da=0, db=0):
@@ -70,45 +78,64 @@ def spf1(it1, it2, config, subtree1, subtree2):
 
     if subtree1.size == 1 and subtree2.size == 1:
         n1, n2 = subtree1.node, subtree2.node
-        return min(rename(n1, n2), delete(n1) + insert(n2))
+        return min(
+            (rename(n1, n2), 1, [(subtree1, subtree2)]),
+            (delete(n1) + insert(n2), 2,
+             [(subtree1, None), (None, subtree2)])
+        )
     if subtree1.size == 1:
         n1 = subtree1.node
         return sub_spf1(
-            it2, n1, subtree2, subtree2.sum_ins_cost, delete(n1),
-            lambda n1, n2: rename(n1, n2) - insert(n2)
+            it2, subtree1, subtree2,
+            delete(n1), [(subtree1, None)],
+            lambda n1, n2, num: (
+                rename(n1.node, n2.node) - insert(n2.node), num,
+                [(n1, n2), ("R", [(None, n2)])]
+            )
         )
 
     if subtree2.size == 1:
         n2 = subtree2.node
         return sub_spf1(
-            it1, n2, subtree1, subtree1.sum_del_cost, insert(n2),
-            lambda n2, n1: rename(n1, n2) - delete(n1)
+            it1, subtree2, subtree1,
+            insert(n2), [(None, subtree2)],
+            lambda n2, n1, num: (
+                rename(n1.node, n2.node) - delete(n1.node), num,
+                [(n1, n2), ("R", [(n1, None)])]
+            )
         )
-    return -1
+    return -1, -1, []
 
 
-def sub_spf1(ni, node, subtree, cost, op, calculate):
+def sub_spf1(ni, subtree1, subtree2, op, op_chain, calculate):
     """Implements spf1 single path function for the case when the
     other subtree is a single node
 
     Params:
       ni -- node indexer for the subtree that has more than one element
-      node -- Node object of the subtree that has a single element
-      subtree -- subtree that has more than one element
+      subtree1 -- subtree that has a single element
+      subtree2 -- subtree that has more than one element
       cost -- initial cost
+      cost_chain -- initial chain
       op -- cost of deleting/inserting node
+      op_chain -- chain of deleting/inserting node
       calculate -- function(node, other) that returns the cost of
         renaming nodes
     """
     # pylint: disable=invalid-name
     # pylint: disable=too-many-arguments
-    max_cost = cost + op
-    min_ren_minus_op = min(chain([cost], [
-        calculate(node, info.node)
-        for _, info in ni.preorder_ltr(subtree)
+    cost = subtree2.sum_cost
+    cost_chain = subtree2.sum_chain
+    max_cost = (cost + op, -3, chain(cost_chain, op_chain))
+    min_ren_minus_op = min(itertools.chain([(cost, -2, cost_chain)], [
+        calculate(subtree1, info, num)
+        for num, info in ni.preorder_ltr(subtree2)
     ]))
-    cost += min_ren_minus_op
-    return min(cost, max_cost)
+    final_cost = (
+        min_ren_minus_op[0] + cost, -1,
+        chain(min_ren_minus_op[2], cost_chain)
+    )
+    return min(final_cost, max_cost)
 
 
 class SinglePathFunction(object):
@@ -135,35 +162,41 @@ class SinglePathFunction(object):
             self.delete = apted.config.insert
             self.insert = apted.config.delete
             self.rename = lambda x, y: apted.config.rename(y, x)
-            self.sum_ins_cost = lambda x: x.sum_del_cost
-            self.sum_del_cost = lambda x: x.sum_ins_cost
         else:
             self.swap = lambda a, b: (a, b)
             self.delete = apted.config.delete
             self.insert = apted.config.insert
             self.rename = apted.config.rename
-            self.sum_ins_cost = lambda x: x.sum_ins_cost
-            self.sum_del_cost = lambda x: x.sum_del_cost
 
         self.it2_loff = self.current2.pre_ltr
         self.it2_roff = self.current2.pre_rtl
 
         self.max_size = max(it1.tree_size, it2.tree_size) + 1
+
         # todo: Do not use fn and ft arrays [1, Section 8.4]
+        # Array used in the algorithm before [1]. Using it does not change
+        # the complexity. Do not use it [1, Section 8.4].
         self.fn = [0] * (self.max_size + 1)
-        """Array used in the algorithm before [1]. Using it does not change
-        the complexity.
-        TODO: Do not use it [1, Section 8.4]."""
+        # Array used in the algorithm before [1]. Using it does not change
+        # the complexity. TODO: Do not use it [1, Section 8.4].
         self.ft = [0] * (self.max_size + 1)
-        """Array used in the algorithm before [1]. Using it does not change
-        the complexity.
-        TODO: Do not use it [1, Section 8.4]."""
+        # One of distance arrays to store intermediate distances in spfA.
+        self.q = [0.0] * self.max_size
+        self.qchain = [[] for _ in range(self.max_size)]
 
-        self.q = apted.q
+        size1, size2 = self.current1.size + 1, self.current2.size + 1
         self.delta = apted.delta
-        self.s = zeros((self.current1.size + 1, self.current2.size + 1), float)
-        self.t = zeros((self.current2.size + 1, self.current2.size + 1), float)
-
+        self.dchain = apted.dchain
+        self.s = zeros((size1, size2), float)
+        self.schain = [
+            [[] for _ in range(size2)]
+            for _ in range(size1)
+        ]
+        self.t = zeros((size2, size2), float)
+        self.tchain = [
+            [[] for _ in range(size2)]
+            for _ in range(size2)
+        ]
 
         # SPF-side
         self.ald = None
@@ -192,8 +225,10 @@ class SinglePathFunction(object):
         # Loop C
         self.cost1 = 0  # Current forest 1 cost
         self.size1 = 0  # Current forest 1 size
+        self.chain1 = [] # Current forest 1 chain
         self.cost2 = 0  # Current forest 2 cost
         self.size2 = 0  # Current forest 2 size
+        self.chain2 = [] # Current forest 2 chain
         self.counter = 0
 
         # Loop D
@@ -214,6 +249,7 @@ class SinglePathFunction(object):
         self.atb = lambda x: x.post_ltr
         self.atb_1 = self.it1.post_ltr_info
         self.atb_2 = self.it2.post_ltr_info
+        self.left_right = self.swap
         return self.spf_generic_side()
 
     def spf_r(self):
@@ -226,6 +262,7 @@ class SinglePathFunction(object):
         self.atb = lambda x: x.post_rtl
         self.atb_1 = self.it1.post_rtl_info
         self.atb_2 = self.it2.post_rtl_info
+        self.left_right = self.swap
         return self.spf_generic_side()
 
     def spf_generic_side(self):
@@ -235,10 +272,11 @@ class SinglePathFunction(object):
         to spfA.
         """
         current1, current2 = self.current1, self.current2
+        size1, size2 = current1.size, current2.size
         tree_edit_dist = self.tree_edit_dist
         # Initialise the array to store the keyroot nodes in the right-hand
         # input subtree
-        keyroots = [None] * current2.size
+        keyroots = [None] * size2
         # Get the leftmost/rightmost leaf node of the right-hand input subtree
         leaf = self.ald(current2)
 
@@ -248,15 +286,19 @@ class SinglePathFunction(object):
         # larger than the number of keyroot nodes.
         first_keyroot = self.compute_keyroots(current2, leaf, keyroots, 0)
         # Initialise an array to store intermediate distances for subforest pairs.
-        forestdist = zeros((current1.size + 1, current2.size + 1), float)
+        forestdist = zeros((current1.size + 1, size2 + 1), float)
+        fchain = [
+            [[] for _ in range(size2 + 1)]
+            for _ in range(size1 + 1)
+        ]
         # Compute the distances between pairs of keyroot nodes. In the left-hand
         # input subtree only the root is the keyroot. Thus, we compute the distance
         # between the left-hand input subtree and all keyroot nodes in the
         # right-hand input subtree.
         for i in range(first_keyroot - 1, -1, -1):
-            tree_edit_dist(current1, keyroots[i], forestdist)
+            tree_edit_dist(current1, keyroots[i], forestdist, fchain)
 
-        return forestdist[current1.size][current2.size]
+        return forestdist[size1][size2], -1, fchain[size1][size2]
 
     def compute_keyroots(self, root, leaf, keyroots, index):
         """Calculates and stores keyroot nodes for left paths of the given
@@ -281,13 +323,14 @@ class SinglePathFunction(object):
             path = parent
         return index
 
-    def tree_edit_dist(self, subtree1, subtree2, forestdist):
+    def tree_edit_dist(self, subtree1, subtree2, forestdist, fchain):
         """Implements the core of spfL/spfR. Fills in forestdist array with
         intermediate distances of subforest pairs in dynamic-programming fashion
         """
         delete, insert, rename = self.delete, self.insert, self.rename
         atb_1, atb_2, atb = self.atb_1, self.atb_2, self.atb
-        delta, ald = self.delta, self.ald
+        delta, dchain, ald = self.delta, self.dchain, self.ald
+        lr = self.left_right
 
         i, j = atb(subtree1), atb(subtree2)
         # We need to offset the node ids for accessing forestdist array which
@@ -305,9 +348,11 @@ class SinglePathFunction(object):
         for i1 in range(1, i - ioff + 1):
             info = atb_1[i1 + ioff]
             forestdist[i1][0] = forestdist[i1 - 1][0] + delete(info.node)
+            fchain[i1][0] = chain(fchain[i1 - 1][0], [lr(info, None)])
         for j1 in range(1, j - joff + 1):
             info = atb_2[j1 + joff]
             forestdist[0][j1] = forestdist[0][j1 - 1] + insert(info.node)
+            fchain[0][j1] = chain(fchain[0][j1 - 1], [lr(None, info)])
 
         # Fill in the remaining costs.
         for i1 in range(1, i - ioff + 1):
@@ -323,22 +368,26 @@ class SinglePathFunction(object):
                 self.counter += 1
                 # Calculate partial distance values for this subproblem.
                 u = rename(info1_node, info2_node)
-                da = forestdist[i1 - 1][j1] + delete(info1_node)
-                db = forestdist[i1][j1 - 1] + insert(info2_node)
+                uc = [lr(info1, info2)]
+                da = (forestdist[i1 - 1][j1] + delete(info1_node), 1,
+                      chain(fchain[i1 -1][j1], [lr(info1, None)]))
+                db = (forestdist[i1][j1 - 1] + insert(info2_node), 2,
+                      chain(fchain[i1][j1 - 1], [lr(None, info2)]))
                 # If current subforests are subtrees.
                 a, b = self.swap(info1.pre_ltr, info2.pre_ltr)
                 if info1_ald is ald(subtree1) and info2_ald is ald(subtree2):
-                    dc = forestdist[i1 - 1][j1 - 1] + u
+                    dc = (forestdist[i1 - 1][j1 - 1] + u, 3,
+                          chain(fchain[i1 - 1][j1 - 1], uc))
                     # Store the relevant distance value in delta array.
                     delta[a][b] = forestdist[i1 - 1][j1 - 1]
+                    dchain[a][b] = fchain[i1 - 1][j1 - 1]
                 else:
-                    dc = (
-                        forestdist
-                        [atb(info1_ald) - 1 - ioff]
-                        [atb(info2_ald) - 1 - joff]
-                    ) + delta[a][b] + u
+                    id1 = atb(info1_ald) - 1 - ioff
+                    id2 = atb(info2_ald) - 1 - joff
+                    dc = (forestdist[id1][id2] + delta[a][b] + u, 3,
+                          chain(fchain[id1][id2], dchain[a][b], uc))
                 # Calculate final minimum.
-                forestdist[i1][j1] = min(da, db, dc)
+                forestdist[i1][j1], _, fchain[i1][j1] = min(da, db, dc)
 
     def spf_a(self):
         """Implements the single-path function spfA. Here, we use it strictly
@@ -353,7 +402,7 @@ class SinglePathFunction(object):
         pre_rtl_1, pre_rtl_2 = self.it1.pre_rtl_info, self.it2.pre_rtl_info
         path, path_leaf = self.path_type, self.it1.pre_ltr_info[self.path_id]
 
-        result = 0
+        result = 0, -1, []
 
         # for v in F on the path from dummy E to root
         for vparent, v in self.it1.walk_up(path_leaf, self.current1):
@@ -435,13 +484,13 @@ class SinglePathFunction(object):
         atb, bta, lna = self.atb, self.bta, self.lna
         amost_child, bmost_child = self.amost_child, self.bmost_child
 
-        result = 0
+        result = 0, -1, []
 
         self.fn = [-1] * self.max_size
         self.ft = [-1] * self.max_size
 
         # Store the current size and cost of forest in F.
-        tmp_size1, tmp_cost1 = self.size1, self.cost1
+        tmpsize1, tmpcost1, tmpchain1 = self.size1, self.cost1, self.chain1
         current2_atb = atb(current2)
 
         bg_last = bta(current2)
@@ -458,7 +507,7 @@ class SinglePathFunction(object):
             ag_first = bg_info
             ag_last = current2 if bg_info is current2 else amost_child(current2)
             ag_range = list(self.each_ft(ag_first, ag_last))
-            self.size1, self.cost1 = tmp_size1, tmp_cost1
+            self.size1, self.cost1, self.chain1 = tmpsize1, tmpcost1, tmpchain1
 
             result = self.loop_c(
                 bg, af_range, ag_range, bf_first, bf_last,
@@ -476,6 +525,8 @@ class SinglePathFunction(object):
         """Update Delta and q. See [1, Algorithm 4]"""
         loff2, roff2, doff2 = self.it2_loff, self.it2_roff, self.it2_doff
         delta, q, s, t = self.delta, self.q, self.s, self.t
+        dchain, qchain = self.dchain, self.qchain
+        schain, tchain = self.schain, self.tchain
         off1, left_right = self.it1_off, self.left_right
 
         vp = self.vparent
@@ -488,13 +539,17 @@ class SinglePathFunction(object):
             if self.a_part:
                 a, b = self.swap(vp.pre_ltr, bg_parent.pre_ltr)
                 delta[a][b] = s[af_last + 1 - off1][amost - doff2]
+                dchain[a][b] = schain[af_last + 1 - off1][amost - doff2]
+
             if vp_parent and vp is vp_parent.rightmost is vp_parent.leftmost:
                 a, b = self.swap(vp_parent.pre_ltr, bg_parent.pre_ltr)
                 delta[a][b] = s[af_last - off1][amost - doff2]
+                dchain[a][b] = schain[af_last - off1][amost - doff2]
             # B: for node lv in left(F_p(v), v) \\cup lv_last in reverse LTR
             # B': for node rv in right(F_p(v), v) \\cup {p(v)}
             for af in af_range:
                 q[af] = s[af - off1][amost - doff2]
+                qchain[af] = schain[af - off1][amost - doff2]
 
         # B: foreach lw in {rw} \\cup left(G', rw) in reverse LTR preorder
         # B': foreach rw in {lw} \\cup right(G', lw) in reverse RTL preorder
@@ -502,6 +557,7 @@ class SinglePathFunction(object):
         for ag, _ in ag_range:
             lg, rg = left_right(ag, bg)
             t[lg - loff2][rg - roff2] = s[af_last - off1][ag - doff2]
+            tchain[lg - loff2][rg - roff2] = schain[af_last - off1][ag - doff2]
 
     def loop_c(self, bg, af_range, ag_range, bf, bf_last, g_size):
         """Loop C of [1, Algorithm 3]
@@ -510,11 +566,14 @@ class SinglePathFunction(object):
         """
         # pylint: disable=cell-var-from-loop
         atb, bta, atb_1 = self.atb, self.bta, self.atb_1
-        v_atb = atb(self.v)
         loff2, roff2, doff2 = self.it2_loff, self.it2_roff, self.it2_doff
-        off1, fn, t, left_right = self.it1_off, self.fn, self.t, self.left_right
-        swap, delta = self.swap, self.delta
-        result = 0
+        off1, fn, lr = self.it1_off, self.fn, self.left_right
+        swap, delta, dchain = self.swap, self.delta, self.dchain
+        q, qchain = self.q, self.qchain
+        t, tchain = self.t, self.tchain
+        s, schain = self.s, self.schain
+        v_atb = atb(self.v)
+        result = 0, -1, []
         af_last = af_range[-1]
 
         for af in af_range:
@@ -528,8 +587,9 @@ class SinglePathFunction(object):
             # Increment size and cost of F forest by node lf
             self.size1 += 1
             self.cost1 += self.delete(af_node)
+            self.chain1 = chain(self.chain1, [swap(af_info, None)])
             # Reset size and cost of forest in G to subtree G_lg_first
-            self.size2, self.cost2 = g_size, 0
+            self.size2, self.cost2, self.chain2 = g_size, 0, []
 
             af_subtree_size = af_info.size
             af_is_consecutive = af_is_side_sibling = False
@@ -543,62 +603,85 @@ class SinglePathFunction(object):
                 sp1source = 2
             if bta(af_info) == bf: # F_{lF,rF} is a tree.
                 sp3_0 = 0
+                sp3_0c = []
                 if af_subtree_size == 1: # F_{lF,rF} is a single node.
                     sp1source = 3
                 sp3source = 2
             else:
-                sp3_0 = self.cost1 - self.sum_del_cost(af_info)
+                sp3_0 = self.cost1 - af_info.sum_cost
+                sp3_0c = chain(self.chain1, [("R", af_info.sum_chain)])
                 if af_is_side_sibling:
                     sp3source = 3
 
             # Set SP1
-            sp1_s = self.s[af + 1 - off1]
+            sp1_s = s[af + 1 - off1]
+            sp1_sc = schain[af + 1 - off1]
             self.sp1_func = {
-                1: lambda ag: sp1_s[ag - doff2],
-                2: lambda ag: get(t, ag, bg, left_right, -loff2, -roff2),
-                3: lambda ag: self.cost2,
+                1: lambda ag: (sp1_s[ag - doff2], 1, chain(sp1_sc[ag - doff2])),
+                2: lambda ag: (get(t, ag, bg, lr, -loff2, -roff2), 1,
+                               chain(get(tchain, ag, bg, lr, -loff2, -roff2))),
+                3: lambda ag: (self.cost2, 1, chain(self.chain2)),
             }[sp1source]
 
             # Set SP2
-            sp2_s = self.s[af - off1]
-            self.sp2_func = (
-                lambda ag: self.cost1 if g_size == 1 else self.q[af]
-            )
-            self.sp2_func_after = lambda ag: sp2_s[self.fn[ag] - doff2]
+            sp2_s = s[af - off1]
+            sp2_sc = schain[af - off1]
+            def sp2_func(ag):
+                if g_size == 1:
+                    return (self.cost1, 2, self.chain1)
+                return (q[af], 2, qchain[af])
+            self.sp2_func = sp2_func
+            self.sp2_func_after = lambda ag: (sp2_s[fn[ag] - doff2], 2,
+                                              sp2_sc[fn[ag] - doff2])
 
             # Set SP3
-            sp3_s = self.s[0]
+            sp3_s = s[0]
+            sp3_sc = schain[0]
             if sp3source == 1:
-                sp3_s = self.s[af + af_subtree_size - off1]
-            self.sp3_func = lambda lg, info: sp3_0
+                sp3_s = s[af + af_subtree_size - off1]
+                sp3_sc = schain[af + af_subtree_size - off1]
+            self.sp3_func = lambda lg, info: (sp3_0, 3, sp3_0c)
             self.sp3_func_after = {
-                1: lambda ag, info: sp3_s[fn[ag + info.size - 1] - doff2],
-                2: lambda ag, info: self.cost2 - self.sum_ins_cost(info),
-                3: lambda ag, info: get(t, fn[ag + info.size - 1], bg,
-                                        left_right, -loff2, -roff2)
+                1: lambda ag, info: (
+                    sp3_s[fn[ag + info.size - 1] - doff2], 3,
+                    sp3_sc[fn[ag + info.size - 1] - doff2]
+                ),
+                2: lambda ag, info: (
+                    self.cost2 - info.sum_cost, 3,
+                    chain([("R", info.sum_chain)], self.chain2)
+                ),
+                3: lambda ag, info: (
+                    get(t, fn[ag + info.size - 1], bg, lr, -loff2, -roff2), 3,
+                    get(tchain, fn[ag + info.size - 1], bg, lr, -loff2, -roff2)
+                )
             }[sp3source]
             af_pre = af_info.pre_ltr
-            self.sp3_pre = lambda bg_pre: get(delta, af_pre, bg_pre, swap)
+            self.sp3_pre = lambda bg_pre: (
+                get(delta, af_pre, bg_pre, swap), 3,
+                get(dchain, af_pre, bg_pre, swap)
+            )
 
-
-            result = self.loop_d(self.s[af - off1], ag_range, af_node)
+            result = self.loop_d(
+                s[af - off1], schain[af - off1], ag_range, af_info, af_node
+            )
 
         return result
 
-    def loop_d(self, swrite, ag_range, f_node):
+    def loop_d(self, swrite, swchain, ag_range, f_info, f_node):
         """Loop D of [1, Algorithm 3]
         D: foreach node lw in {rw} \\cup left(G', rw) in reverse LTR preorder
         D': foreach node rw in {lw} \\cup rigth(G', lw) in reverse RTL preorder
         """
         doff2 = self.it2_doff
-        result = 0
+        result = 0, -1, []
         iterator = iter(ag_range)
         # First iteration
         ag, ag_info = next(iterator)
         ag_node = ag_info.node
-        self.cost2 += self.sum_ins_cost(ag_info)
-        result = swrite[ag - doff2] = self.calculate_min_loop_d(
-            ag, ag_info, ag_node, f_node
+        self.cost2 += ag_info.sum_cost
+        self.chain2 = chain(self.chain2, ag_info.sum_chain)
+        result = swrite[ag - doff2], _, swchain[ag - doff2] = (
+            self.calculate_min_loop_d(ag, ag_info, ag_node, f_info, f_node)
         )
         self.counter += 1
         self.sp2_func = self.sp2_func_after
@@ -608,26 +691,35 @@ class SinglePathFunction(object):
         for ag, ag_info in iterator:
             ag_node = ag_info.node
             self.cost2 += self.insert(ag_node)
-            result = swrite[ag - doff2] = self.calculate_min_loop_d(
-                ag, ag_info, ag_node, f_node
+            self.chain2 = chain(self.chain2, [self.swap(None, ag_info)])
+            result = swrite[ag - doff2], _, swchain[ag - doff2] = (
+                self.calculate_min_loop_d(ag, ag_info, ag_node, f_info, f_node)
             )
 
             self.counter += 1
 
         return result
 
-    def calculate_min_loop_d(self, index, g_info, g_node, f_node):
+    def calculate_min_loop_d(self, index, g_info, g_node, f_info, f_node):
         """Compute delta(F_(l_v,r_v), G_(l_w,r_w))
         Return min between sp1, sp2, and sp3
         Index is g_info.pre_ltr in Loop D
               or g_info.pre_rtl in Loop D'
         """
         return min(
-            self.sp1_func(index) + self.delete(g_node),
-            self.sp2_func(index) + self.insert(g_node),
-            self.sp3_pre(g_info.pre_ltr) +
-            self.sp3_func(index, g_info) +
-            self.rename(f_node, g_node),
+            combine(
+                self.sp1_func(index),
+                (self.delete(f_node), 1, [self.swap(f_info, None)])
+            ),
+            combine(
+                self.sp2_func(index),
+                (self.insert(g_node), 2, [self.swap(None, g_info)])
+            ),
+            combine(
+                self.sp3_pre(g_info.pre_ltr),
+                self.sp3_func(index, g_info),
+                (self.rename(f_node, g_node), 3, [self.swap(f_info, g_info)])
+            )
         )
 
     def each_ft(self, start, finish):

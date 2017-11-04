@@ -24,7 +24,6 @@
 """NodeIndexer and NodeInfo implementations"""
 from __future__ import (absolute_import, division)
 
-from .helpers import Config
 
 class NodeIndexer(object):
     """Indexes nodes of the input tree to the algorithm that is already
@@ -54,37 +53,38 @@ class NodeIndexer(object):
 
         self.num = num
 
+        # Config object that specifies how to calculate the edit distance
         self.config = config or Config()
-        """Config object that specifies how to calculate the edit distance"""
 
+        # Temporary variable that stores preorder index
         self.preorder_tmp = 0
-        """Temporary variable that stores preorder index"""
 
+        # Map left-to-right preorder index to NodeInfo
         self.pre_ltr_info = []
-        """Map left-to-right preorder index to NodeInfo"""
 
+        # Map left-to-right postorder index to NodeInfo
         self.post_ltr_info = []
-        """Map left-to-right postorder index to NodeInfo"""
 
+        # Map right-to-left postorder index to NodeInfo
         self.post_rtl_info = []
-        """Map right-to-left postorder index to NodeInfo"""
 
+        # Map right-to-left preorder index to NodeInfo
         self.pre_rtl_info = []
-        """Map right-to-left preorder index to NodeInfo"""
 
+        # Size of input tree
         self.tree_size = 0
-        """Size of input tree"""
 
+        # Number of leftmost-child leaf nodes in the input tree
+        # See [2, Section 5.3].
         self.lchl = 0
-        """Number of leftmost-child leaf nodes in the input tree
-        See [2, Section 5.3]."""
 
+        # Number of rightmost-child leaf nodes in the input tree
+        # See [2, Section 5.3].
         self.rchl = 0
-        """Number of rightmost-child leaf nodes in the input tree
-        See [2, Section 5.3]."""
 
         root, _ = self.index_nodes(tree, -1)
         root.parent = NodeInfo(None, -1)
+        root.parent.num = num
         root.parent.fake_child = root
 
 
@@ -111,6 +111,7 @@ class NodeIndexer(object):
         desc_sizes = current_size = kr_sizes_sum = revkr_sizes_sum = 0
 
         node_info = NodeInfo(node, self.preorder_tmp)
+        node_info.num = self.num
         self.preorder_tmp += 1
         self.pre_ltr_info.append(node_info)
 
@@ -161,11 +162,14 @@ class NodeIndexer(object):
         """
 
         current_leaf = NodeInfo.EMPTY
-        node_for_sum = -1
-        parent_for_sum = -1
 
-        delete = self.config.delete
-        insert = self.config.insert
+        if self.num == 0:
+            delete = self.config.delete
+            swap = lambda a, b: (a, b)
+        else:
+            delete = self.config.insert
+            swap = lambda a, b: (b, a)
+
 
         for i, node in enumerate(self.pre_ltr_info):
             node.pre_rtl = self.tree_size - 1 - node.post_ltr
@@ -190,15 +194,15 @@ class NodeIndexer(object):
             # Sum up costs of deleting and inserting entire subtrees.
             # Reverse the node index.
             # Traverses nodes bottom-up
-            node_for_sum = self.pre_ltr_info[self.tree_size - i - 1]
-            parent_for_sum = node_for_sum.parent
+            sum_node = self.pre_ltr_info[self.tree_size - i - 1]
+            sum_parent = sum_node.parent
             # Update myself
-            node_for_sum.sum_del_cost += delete(node_for_sum.node)
-            node_for_sum.sum_ins_cost += insert(node_for_sum.node)
+            sum_node.sum_cost += delete(sum_node.node)
+            sum_node.sum_chain += [swap(sum_node, None)]
 
-            if parent_for_sum:
-                parent_for_sum.sum_del_cost += node_for_sum.sum_del_cost
-                parent_for_sum.sum_ins_cost += node_for_sum.sum_ins_cost
+            if sum_parent:
+                sum_parent.sum_cost += sum_node.sum_cost
+                sum_parent.sum_chain += sum_node.sum_chain
 
 
         current_leaf = NodeInfo.EMPTY
@@ -263,83 +267,72 @@ class NodeInfo(object):
         if node:
             node.index = preorder
 
+        # Node referred by this info
         self.node = node
-        """Node referred by this info"""
 
+        # Left-to-right preorder traversal index
         self.pre_ltr = preorder
-        """Left-to-right preorder traversal index"""
 
+        # Right-to-left preorder traversal index
         self.pre_rtl = -1
-        """Right-to-left preorder traversal index"""
 
+        # Left-to-right postorder traversal index
         self.post_ltr = -1
-        """Left-to-right postorder traversal index"""
 
+        # Rigth-to-left postorder traversal index
         self.post_rtl = -1
-        """Rigth-to-left postorder traversal index"""
 
+        # Parent node_info
         self.parent = None
-        """Parent node_info"""
 
+        # Node children in left-to-right preorder
         self._children = []
-        """Node children in left-to-right preorder"""
 
+        # Node lies on the leftmost path starting at its parent
+        # See [2, Section 5.3, Algorithm 1, Lines 26,36]
         self.type_l = False
-        """Node lies on the leftmost path starting at its parent
-        See [2, Section 5.3, Algorithm 1, Lines 26,36]"""
 
+        # Node lies on the rightmost path starting at its parent
+        # See [2, Section 5.3, Algorithm 1, Lines 26,36]
         self.type_r = False
-        """Node lies on the rightmost path starting at its parent
-        See [2, Section 5.3, Algorithm 1, Lines 26,36]"""
 
+        # Cost of spf_A (single path function using an inner path)
+        # for the subtree rooted at this node. See [1, Section 5.2]
         self.desc_sum = 0
-        """Cost of spf_A (single path function using an inner path)
-        for the subtree rooted at this node
-        See [1, Section 5.2]
-        """
 
+        # Cost of spf_L (single path function using the leftmost path)
+        # for the subtree rooted at this node. See [1, Section 5.2]
         self.kr_sum = 0
-        """Cost of spf_L (single path function using the leftmost path)
-        for the subtree rooted at this node
-        See [1, Section 5.2]"""
 
+        # Cost of spf_R (single path function using the rightmost path)
+        # for the subtree rooted at this node. See [1, Section 5.2]
         self.rev_kr_sum = 0
-        """Cost of spf_R (single path function using the rightmost path)
-        for the subtree rooted at this node
-        See [1, Section 5.2]"""
 
+        # Size of node subtree (including itself and all its descendants)
         self.size = 1
-        """Size of node subtree (including itself and all its descendants)"""
 
+        # First leaf node to the left of this node. See [1, Section 8.4].
         self.lnl = self.EMPTY
-        """First leaf node to the left of this node
-        See [1, Section 8.4]."""
 
+        # First leaf node to the right of this node. See [1, Section 8.4].
         self.lnr = self.EMPTY
-        """First leaf node to the right of this node
-        See [1, Section 8.4]."""
 
-        self.lnc = self.EMPTY
-        self.fnc = self.EMPTY
-        self.ftc = self.EMPTY
-        self.ln_in_use = None
-        """Current ln node. It changes during the execution"""
-
-
+        # Leftmost leaf descendant of this node
         self.lld = self.EMPTY
-        """Leftmost leaf descendant of this node"""
 
+        # Rightmost leaf descendant of this node
         self.rld = self.EMPTY
-        """Rightmost leaf descendant of this node"""
 
-        self.sum_del_cost = 0
-        """Cost of deleting all nodes in the subtree rooted at this node"""
+        # Cost of deleting/inserting all nodes in the subtree rooted at this node
+        self.sum_cost = 0
 
-        self.sum_ins_cost = 0
-        """Cost of inserting all nodes in the subtree rooted at this node"""
+        # Chain of operations for sum_del_cost
+        self.sum_chain = []
 
+        # Overrides leftmost and rightmost child
         self.fake_child = None
-        """Overrides leftmost and rightmost child"""
+
+        self.num = -1
 
 
     def __bool__(self):
@@ -372,7 +365,7 @@ class NodeInfo(object):
         return children[0]
 
     def __repr__(self):
-        return str(self.pre_ltr)
+        return str(self.post_ltr + 1)
 
 EMPTY = NodeInfo.EMPTY = NodeInfo(None, -1)
 EMPTY.lnl = EMPTY.lnr = EMPTY.lld = EMPTY.rld = EMPTY

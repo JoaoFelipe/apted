@@ -25,9 +25,10 @@
 from __future__ import (absolute_import, division)
 
 import math
+from itertools import chain
 from numpy import zeros
-from .helpers import Config
 from .node_indexer import NodeIndexer
+from .helpers import Config
 from .single_path_functions import spf1, SinglePathFunction, LEFT, RIGHT, INNER
 # pylint: disable=invalid-name
 # pylint: disable=fixme
@@ -77,11 +78,7 @@ class APTED(object):
         # The distance matrix [1, Sections 3.4,8.2,8.3]
         # Used to store intermediate distances between pairs of subtrees
         self.delta = []
-
-        # One of distance arrays to store intermediate distances in spfA.
-        # TODO: Verify if other spf-local arrays are initialised within spf.
-        # If yes, move q to spf to - then, an offset has to be used to access it
-        self.q = []
+        self.dchain = []
 
         # Stores the number of subproblems encountered while computing the
         # distance. See [1, Section 10].
@@ -95,6 +92,8 @@ class APTED(object):
 
         # Stores the result
         self.result = None
+        self.tmapping = None
+        self.mapping = None
 
 
     def compute_edit_distance(self):
@@ -103,12 +102,12 @@ class APTED(object):
         # Initialize delta array
         if self.result is None:
             if self.it1.lchl < self.it1.rchl:
-                self.delta = self.compute_opt_strategy_post_l()
+                self.delta, self.dchain = self.compute_opt_strategy_post_l()
             else:
-                self.delta = self.compute_opt_strategy_post_r()
+                self.delta, self.dchain = self.compute_opt_strategy_post_r()
 
             self.ted_init()
-            self.result = self.gted()
+            self.result, _, self.tmapping = self.gted()
         return self.result
 
     def compute_edit_distance_spf_test(self, spf_type):
@@ -120,6 +119,10 @@ class APTED(object):
             index_1 = self.it1.pre_ltr_info
             size1, size2 = self.it1.tree_size, self.it2.tree_size
             self.delta = zeros((size1, size2), float)
+            self.dchain = [
+                [[] for _ in range(size2)]
+                for _ in range(size1)
+            ]
             # Fix a path type to trigger specific spf.
             for i in range(size1):
                 for j in range(size2):
@@ -129,7 +132,7 @@ class APTED(object):
                     elif spf_type == RIGHT:
                         self.delta[i][j] = index_1[i].rld.pre_ltr + 1
             self.ted_init()
-            self.result = self.gted()
+            self.result, _, self.tmapping = self.gted()
         return self.result
 
     def ted_init(self):
@@ -137,13 +140,10 @@ class APTED(object):
         deleting and inserting subtrees without their root nodes."""
         it1, it2 = self.it1, self.it2
 
-        delta = self.delta
+        delta, dchain = self.delta, self.dchain
         # Reset the subproblems counter.
         self.counter = 0
-        # Initialize arrays
-        max_size = max(it1.tree_size, it2.tree_size) + 1
-        # todo: Move q initialzation to spfA
-        self.q = [0.0] * max_size
+
         # Computer subtree distances without the root nodes when one of
         # the subtrees is a single node
 
@@ -161,10 +161,15 @@ class APTED(object):
                 size2 = node2.size
                 if size1 == 1 and size2 == 1:
                     delta[x][y] = 0.0
+                    dchain[x][y] = []
                 elif size1 == 1:
-                    delta[x][y] = node2.sum_ins_cost - insert(node2.node)
+                    delta[x][y] = node2.sum_cost - insert(node2.node)
+                    dchain[x][y] = chain(node2.sum_chain,
+                                         [("R", [(None, node2)])])
                 elif size2 == 1:
-                    delta[x][y] = node1.sum_del_cost - delete(node1.node)
+                    delta[x][y] = node1.sum_cost - delete(node1.node)
+                    dchain[x][y] = chain(node1.sum_chain,
+                                         [("R", [(node1, None)])])
 
     def compute_opt_strategy_post_l(self):
         """Compute the optimal strategy using left-to-right postorder traversal
@@ -234,6 +239,10 @@ class APTED(object):
         it1, it2 = self.it1, self.it2
         size1, size2 = it1.tree_size, it2.tree_size
         strategy = zeros((size1, size2), float)
+        delta_chain = [
+            [["R"] for _ in range(size2)]
+            for _ in range(size1)
+        ]
         cost1 = [None] * size1
 
         leaf_row = [Cost() for _ in range(size2)]
@@ -354,19 +363,22 @@ class APTED(object):
                     cost.set_lri(0)
                 rows_to_reuse.append(cost_pointer_v)
 
-        return strategy
+        return strategy, delta_chain
 
     def gted(self, data=None):
         """Implements GTED algorithm [1, Section 3.4].
 
         Return the tree edit distance between the source and destination trees.
         """
-        it1, it2 = self.it1, self.it2
+        it1, it2, dchain = self.it1, self.it2, self.dchain
         data = data or [it1.pre_ltr_info[0], it2.pre_ltr_info[0]]
         tree1, tree2 = data
 
         if tree1.size == 1 or tree2.size == 1:  # Use spf1
-            return spf1(it1, it2, self.config, tree1, tree2)
+            result = dv, dx, dc = spf1(it1, it2, self.config, tree1, tree2)
+            self.delta[tree1.pre_ltr][tree2.pre_ltr] = dv
+            dchain[tree1.pre_ltr][tree2.pre_ltr] = dc
+            return result
 
         path_id = int(self.delta[tree1.pre_ltr][tree2.pre_ltr])
         node_id = abs(path_id) - 1
@@ -394,7 +406,6 @@ class APTED(object):
 
 
         data[it_f.num] = tree_f
-        
         # Pass to spfs a boolean that says says if the order of input
         # subtrees has been swapped compared to the order of the initial
         # input trees. Used for accessing delta array and deciding on the
@@ -428,150 +439,42 @@ class APTED(object):
         return INNER
 
     def compute_edit_mapping(self):
-        """Compute the edit mapping between two trees. The trees are input trees
-        to the distance computation and the distance must be computed before
-        computing the edit mapping (distances of subtree pairs are required)
+        """Compute the edit mapping between two trees.
 
         Returns list of pairs of nodes that are mapped as pairs
-        Nodes that are delete or inserted are mapped to 0
+        Nodes that are delete or inserted are mapped to None
         """
-        # todo: Mapping computation requires more thorough documentation
-        #       (methods computeEditMapping, forestDist, mappingCost).
-        self.compute_edit_distance()
-        post_ltr_1, post_ltr_2 = self.it1.post_ltr_info, self.it2.post_ltr_info
-        size1, size2 = self.it1.tree_size, self.it2.tree_size
-        delete, insert = self.config.delete, self.config.insert
-
-        forestdist = zeros((size1 + 1, size2 + 1), float)
-        root_node_pair = True
-        # Forestdist for input trees has to be computed
-        self.forest_dist(size1, size2, forestdist)
-
-        # Empty edit mapping
-        edit_mapping = []
-        # Stack of tree pairs starting with the pair (ted1, ted2)
-        tree_pairs = [(size1, size2)]
-
-        while tree_pairs:
-            # Get next pair to be processed
-            row, col = tree_pairs.pop()
-
-            # compute forest distance matrix
-            if not root_node_pair:
-                self.forest_dist(row, col, forestdist)
-
-            root_node_pair = False
-
-            # compute mapping for current forest distance matrix
-            first_row = post_ltr_1[row - 1].lld.post_ltr
-            first_col = post_ltr_2[col - 1].lld.post_ltr
-
-            while row > first_row or col > first_col:
-                row_m1 = post_ltr_1[row - 1]
-                col_m1 = post_ltr_2[col - 1]
-                fdrc = forestdist[row][col]
-
-                if (
-                        row > first_row and
-                        forestdist[row - 1][col] + delete(row_m1.node) == fdrc
-                ):
-                    # Node with post ltr row is deleted from ted1
-                    edit_mapping.append((row, 0))
-                    row -= 1
-                elif (
-                        col > first_col and
-                        forestdist[row][col - 1] + insert(col_m1.node) == fdrc
-                ):
-                    # Node with post ltr col is inserted intro ted2
-                    edit_mapping.append((0, col))
-                    col -= 1
+        if self.tmapping is None:
+            self.compute_edit_distance()
+        if self.mapping is None:
+            result = set()
+            rem_list = set()
+            for pair in self.tmapping:
+                if pair[0] == "R":
+                    for rem_pair in pair[1]:
+                        try:
+                            result.remove(rem_pair)
+                        except KeyError:
+                            rem_list.add(rem_pair)
+                elif pair not in rem_list:
+                    result.add(pair)
                 else:
-                    # Node with post ltr row in ted1 is renamed to node col in
-                    # ted 2
-                    row_lld = row_m1.lld.post_ltr
-                    col_lld = col_m1.lld.post_ltr
-                    if row_lld == first_row and col_lld == first_col:
-                        edit_mapping.append((row, col))
-                        row -= 1
-                        col -= 1
-                    else:
-                        # append subtree pair
-                        tree_pairs.append((row, col))
-                        row, col = row_lld, col_lld
-
-        return edit_mapping
-
-
-    def forest_dist(self, i, j, forestdist):
-        """Recalculates distances between subforests of two subtrees.
-        These values are used in mapping computation to track back the origin of
-        minimum values. It is basen on Zhang and Shasha algorithm.
-
-        The rename cost must be added in the last line. Otherwise the formula is
-        incorrect. This is due to delta storing distances between subtrees
-        without the root nodes.
-
-        i and j are postorder ids of the nodes - starting with 1.
-        """
-        delete, insert = self.config.delete, self.config.insert
-        rename, delta = self.config.rename, self.delta
-
-        post_ltr_1, post_ltr_2 = self.it1.post_ltr_info, self.it2.post_ltr_info
-
-        i_m1, j_m1 = post_ltr_1[i - 1], post_ltr_2[j - 1]
-        i_m1_lld, j_m1_lld = i_m1.lld.post_ltr, j_m1.lld.post_ltr
-        forestdist[i_m1_lld][j_m1_lld] = 0
-
-        for di in range(i_m1_lld + 1, i + 1):
-            di_m1 = post_ltr_1[di - 1]
-            forestdist[di][j_m1_lld] = (
-                forestdist[di - 1][j_m1_lld] + delete(di_m1.node)
-            )
-            for dj in range(j_m1_lld + 1, j + 1):
-                dj_m1 = post_ltr_2[dj - 1]
-                forestdist[i_m1_lld][dj] = (
-                    forestdist[i_m1_lld][dj - 1] + insert(dj_m1.node)
-                )
-                cost_ren = rename(di_m1.node, dj_m1.node)
-                # todo: the first two elements of the minimum can be computed
-                # here, similarly to spfl and spfr
-                if di_m1.lld.post_ltr == i_m1_lld and dj_m1.lld.post_ltr == j_m1_lld:
-                    forestdist[di][dj] = min(
-                        forestdist[di - 1][dj] + delete(di_m1.node),
-                        forestdist[di][dj - 1] + insert(dj_m1.node),
-                        forestdist[di - 1][dj - 1] + cost_ren
-                    )
-                    # If substituted with delta, this will overwrite the value
-                    # in delta.
-                    # It looks that we don't have to write this value.
-                    # Conceptually it is correct because we already have all
-                    # the values in delta for subtrees without the root nodes,
-                    # and we need these.
-                    # treedist[di][dj] = forestdist[di][dj];
-                else:
-                    # di and dj are postorder ids of the nodes - starting with 1
-                    # Substituted 'treedist[di][dj]' with
-                    # 'delta[it1.postL_to_preL[di-1]][it2.postL_to_preL[dj-1]]'
-                    forestdist[di][dj] = min(
-                        forestdist[di - 1][dj] + delete(di_m1.node),
-                        forestdist[di][dj - 1] + insert(dj_m1.node),
-                        forestdist[di_m1.lld.post_ltr][dj_m1.lld.post_ltr] +
-                        delta[di_m1.pre_ltr][dj_m1.pre_ltr] + cost_ren
-                    )
+                    rem_list.remove(pair)
+            self.mapping = result
+        return self.mapping
 
     def mapping_cost(self, mapping):
         """Calculates the cost of an edit mapping. It traverses the mapping and
         sums up the cost of each operation. The costs are taken from the cost
         model."""
-        post_ltr_1, post_ltr_2 = self.it1.post_ltr_info, self.it2.post_ltr_info
         delete, insert = self.config.delete, self.config.insert
         rename = self.config.rename
         cost = 0
         for row, col in mapping:
-            if row == 0: # insertion
-                cost += insert(post_ltr_2[col - 1].node)
-            elif col == 0: # deletion
-                cost += delete(post_ltr_1[row - 1].node)
+            if row is None: # insertion
+                cost += insert(col.node)
+            elif col is None: # deletion
+                cost += delete(row.node)
             else:
-                cost += rename(post_ltr_1[row - 1].node, post_ltr_2[col - 1].node)
+                cost += rename(row.node, col.node)
         return cost
