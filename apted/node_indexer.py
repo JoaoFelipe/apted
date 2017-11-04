@@ -49,8 +49,10 @@ class NodeIndexer(object):
     """
     # pylint: disable=too-many-instance-attributes
 
-    def __init__(self, tree, config=None):
+    def __init__(self, tree, num, config=None):
         # pylint: disable=too-many-statements
+
+        self.num = num
 
         self.config = config or Config()
         """Config object that specifies how to calculate the edit distance"""
@@ -81,10 +83,6 @@ class NodeIndexer(object):
         """Number of rightmost-child leaf nodes in the input tree
         See [2, Section 5.3]."""
 
-        self.current_index = 0
-        """Left-to-right preorder id of the current subtree's root node.
-        Used in the tree decomposition phase of APTED. See [1, Algorithm 1]"""
-
         root, _ = self.index_nodes(tree, -1)
         root.parent = NodeInfo(None, -1)
         root.parent.fake_child = root
@@ -95,82 +93,6 @@ class NodeIndexer(object):
         self.post_rtl_info = [None] * self.tree_size
 
         self.post_traversal_indexing()
-
-        # Fallback
-        self.parents = []
-        self.children = []
-        self.node_type_l = []
-        self.node_type_r = []
-        self.pre_ltr_to_desc_sum = []
-        self.pre_ltr_to_kr_sum = []
-        self.pre_ltr_to_rev_kr_sum = []
-        self.pre_ltr_to_node = []
-        self.sizes = []
-        self.pre_ltr_to_pre_rtl = []
-        self.pre_ltr_to_post_ltr = []
-        self.pre_ltr_to_post_rtl = []
-        self.pre_ltr_to_ln = []
-        self.pre_ltr_to_sum_del_cost = []
-        self.pre_ltr_to_sum_ins_cost = []
-
-        for node_info in self.pre_ltr_info:
-            self.parents.append(getattr(node_info.parent, 'pre_ltr', -1))
-            self.children.append([x.pre_ltr for x in node_info.children])
-            self.node_type_l.append(node_info.type_l)
-            self.node_type_r.append(node_info.type_r)
-            self.pre_ltr_to_desc_sum.append(node_info.desc_sum)
-            self.pre_ltr_to_kr_sum.append(node_info.kr_sum)
-            self.pre_ltr_to_rev_kr_sum.append(node_info.rev_kr_sum)
-            self.pre_ltr_to_node.append(node_info.node)
-            self.sizes.append(node_info.size)
-            self.pre_ltr_to_pre_rtl.append(node_info.pre_rtl)
-            self.pre_ltr_to_post_ltr.append(node_info.post_ltr)
-            self.pre_ltr_to_post_rtl.append(node_info.post_rtl)
-            self.pre_ltr_to_ln.append(getattr(node_info.lnl, 'pre_ltr', -1))
-            self.pre_ltr_to_sum_del_cost.append(node_info.sum_del_cost)
-            self.pre_ltr_to_sum_ins_cost.append(node_info.sum_ins_cost)
-        self.pre_rtl_to_pre_ltr = []
-        self.pre_rtl_to_ln = []
-        for node_info in self.pre_rtl_info:
-            self.pre_rtl_to_pre_ltr.append(node_info.pre_ltr)
-            self.pre_rtl_to_ln.append(getattr(node_info.lnr, 'pre_rtl', -1))
-        self.post_ltr_to_pre_ltr = []
-        self.post_ltr_to_lld = []
-        for node_info in self.post_ltr_info:
-            self.post_ltr_to_pre_ltr.append(node_info.pre_ltr)
-            self.post_ltr_to_lld.append(node_info.lld.post_ltr)
-        self.post_rtl_to_pre_ltr = []
-        self.post_rtl_to_rld = []
-        for node_info in self.post_rtl_info:
-            self.post_rtl_to_pre_ltr.append(node_info.pre_ltr)
-            self.post_rtl_to_rld.append(node_info.rld.post_rtl)
-
-        """
-        print("Indexes")
-        print("P", self.parents)
-        print("C", self.children)
-        print("NTL", self.node_type_l)
-        print("NTR", self.node_type_r)
-        print("LDS", self.pre_ltr_to_desc_sum)
-        print("LKR", self.pre_ltr_to_kr_sum)
-        print("LRKR", self.pre_ltr_to_rev_kr_sum)
-        print("LN", self.pre_ltr_to_node)
-        print("S", self.sizes)
-        print("LR", self.pre_ltr_to_pre_rtl)
-        print("RL", self.pre_rtl_to_pre_ltr)
-        print("PLL", self.post_ltr_to_pre_ltr)
-        print("LPL", self.pre_ltr_to_post_ltr)
-        print("LPR", self.pre_ltr_to_post_rtl)
-        print("PRL", self.post_rtl_to_pre_ltr)
-        print("-")
-        print("PLlld", self.post_ltr_to_lld)
-        print("PRrld", self.post_rtl_to_rld)
-        print("LLN", self.pre_ltr_to_ln)
-        print("RLN", self.pre_rtl_to_ln)
-        print("LSDC", self.pre_ltr_to_sum_del_cost)
-        print("LSIC", self.pre_ltr_to_sum_ins_cost)
-        print(self.lchl, self.rchl)
-        """
 
     def index_nodes(self, node, postorder):
         """Preprocesses each node of the tree and creates associated NodeInfo
@@ -305,11 +227,6 @@ class NodeIndexer(object):
         for pre_ltr in range(tree.pre_ltr, target):
             yield pre_ltr, self.pre_ltr_info[pre_ltr]
 
-    def preorder_rtl(self, tree):
-        """Generator that traverses tree in right-to-left preorder"""
-        for pre_rtl in range(tree.pre_rtl + tree.size - 1, tree.pre_rtl - 1, -1):
-            yield pre_rtl, self.pre_rtl_info[pre_rtl]
-
     def traverse_up(self, current, target=None):
         """Traverse up to parent until it reaches the target
         If target is not specified, it is the root of the tree
@@ -334,10 +251,6 @@ class NodeIndexer(object):
         current.fake_child = None
         for parent, curr in self.traverse_up(current, target):
             yield parent, curr
-
-    @property
-    def current_node(self):
-        return self.pre_ltr_info[self.current_index]
 
 
 class NodeInfo(object):

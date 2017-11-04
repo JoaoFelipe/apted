@@ -88,10 +88,10 @@ class APTED(object):
         self.counter = 0
 
         # Stores the indexes of the first input tree
-        self.it1 = NodeIndexer(tree1, self.config)
+        self.it1 = NodeIndexer(tree1, 0, self.config)
 
         # Stores the indexes of the second input tree
-        self.it2 = NodeIndexer(tree2, self.config)
+        self.it2 = NodeIndexer(tree2, 1, self.config)
 
         # Stores the result
         self.result = None
@@ -356,53 +356,54 @@ class APTED(object):
 
         return strategy
 
-    def gted(self):
+    def gted(self, data=None):
         """Implements GTED algorithm [1, Section 3.4].
-        TODO: Document the internals. Point to lines of the algorithm.
 
         Return the tree edit distance between the source and destination trees.
         """
         it1, it2 = self.it1, self.it2
-        subtree1, subtree2 = it1.current_node, it2.current_node
+        data = data or [it1.pre_ltr_info[0], it2.pre_ltr_info[0]]
+        tree1, tree2 = data
 
-        if subtree1.size == 1 or subtree2.size == 1:  # Use spf1
-            return spf1(it1, it2, self.config, subtree1, subtree2)
+        if tree1.size == 1 or tree2.size == 1:  # Use spf1
+            return spf1(it1, it2, self.config, tree1, tree2)
 
-        path_id = int(self.delta[subtree1.pre_ltr][subtree2.pre_ltr])
+        path_id = int(self.delta[tree1.pre_ltr][tree2.pre_ltr])
         node_id = abs(path_id) - 1
 
         if node_id < it1.tree_size:  # Apply on subtree 1
-            return self.sub_gted(it1, it2, subtree1, path_id, node_id, False)
+            return self.sub_gted(data, it1, it2, tree1, path_id, node_id, False)
 
         # Apply on subtree 2
         node_id -= it1.tree_size
-        return self.sub_gted(it2, it1, subtree2, path_id, node_id, True)
+        return self.sub_gted(data, it2, it1, tree2, path_id, node_id, True)
 
-    def sub_gted(self, it_f, it_s, subtree_f, path_id, node_id, reverse=False):
+    def sub_gted(self, data, it_f, it_s, tree_f, path_id, node_id, reverse):
         """Apply gted to subtree"""
         # pylint: disable=too-many-arguments
         size = self.it1.tree_size
 
-        strategy = self.get_strategy_path_type(path_id, size, subtree_f)
+        strategy = self.get_strategy_path_type(path_id, size, tree_f)
         current = it_f.pre_ltr_info[node_id]
 
-        for parent, last in it_f.traverse_up(current, subtree_f):
+        for parent, last in it_f.traverse_up(current, tree_f):
             for child in parent.children:
                 if child is not last:
-                    it_f.current_index = child.pre_ltr
-                    self.gted()
+                    data[it_f.num] = child
+                    self.gted(data)
 
-        # todo: Move this property away from node indexer and pass
-        # directly to spfs.
-        it_f.current_index = subtree_f.pre_ltr
 
+        data[it_f.num] = tree_f
+        
         # Pass to spfs a boolean that says says if the order of input
         # subtrees has been swapped compared to the order of the initial
         # input trees. Used for accessing delta array and deciding on the
         # edit operation. See [1, Section 3.4].
 
         return self.spf(
-            it_f, it_s, self, node_id, strategy, reverse
+            it_f, it_s,
+            data[it_f.num], data[it_s.num],
+            self, node_id, strategy, reverse
         )()
 
     def get_strategy_path_type(self, strategy_path_id, size1, current):
@@ -436,9 +437,6 @@ class APTED(object):
         """
         # todo: Mapping computation requires more thorough documentation
         #       (methods computeEditMapping, forestDist, mappingCost).
-        # todo: Before computing the mapping, verify if TED has been computed
-        #       Mapping computation should trigger distance computation if
-        #       necessary
         self.compute_edit_distance()
         post_ltr_1, post_ltr_2 = self.it1.post_ltr_info, self.it2.post_ltr_info
         size1, size2 = self.it1.tree_size, self.it2.tree_size

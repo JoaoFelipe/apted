@@ -121,13 +121,13 @@ class SinglePathFunction(object):
     # pylint: disable=too-many-instance-attributes
 
 
-    def __init__(self, it1, it2, apted, path_id, path_type, swapped):
+    def __init__(self, it1, it2, c1, c2, apted, path_id, path_type, swapped):
 
         self.path_id, self.path_type = path_id, path_type
         self.swapped = swapped
         self.apted = apted
         self.it1, self.it2 = it1, it2
-        self.current1, self.current2 = it1.current_node, it2.current_node
+        self.current1, self.current2 = c1, c2
 
         # Swapped
         if swapped:

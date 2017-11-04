@@ -40,10 +40,10 @@ class AllPossibleMappingsTED(object):
         self.config = config or Config()
         """Config object that specifies how to calculate the edit distance"""
 
-        self.it1 = NodeIndexer(tree1, self.config)
+        self.it1 = NodeIndexer(tree1, 0, self.config)
         """Stores the indexes of the first input tree"""
 
-        self.it2 = NodeIndexer(tree2, self.config)
+        self.it2 = NodeIndexer(tree2, 1, self.config)
         """Stores the indexes of the second input tree"""
 
 
