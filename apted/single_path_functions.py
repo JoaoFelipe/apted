@@ -148,13 +148,13 @@ class SinglePathFunction(object):
         self.it2_loff = self.current2.pre_ltr
         self.it2_roff = self.current2.pre_rtl
 
-        max_size = max(it1.tree_size, it2.tree_size) + 1
+        self.max_size = max(it1.tree_size, it2.tree_size) + 1
         # todo: Do not use fn and ft arrays [1, Section 8.4]
-        self.fn = [0] * (max_size + 1)
+        self.fn = [0] * (self.max_size + 1)
         """Array used in the algorithm before [1]. Using it does not change
         the complexity.
         TODO: Do not use it [1, Section 8.4]."""
-        self.ft = [0] * (max_size + 1)
+        self.ft = [0] * (self.max_size + 1)
         """Array used in the algorithm before [1]. Using it does not change
         the complexity.
         TODO: Do not use it [1, Section 8.4]."""
@@ -404,7 +404,7 @@ class SinglePathFunction(object):
                 self.calculate_dist = True
 
                 #l = a. r = b
-                result = self.loop_b(lf_range, rf_first, rf_last, RIGHT, 1)
+                result = self.loop_b(lf_range, rf_first, rf_last, RIGHT)
 
             # Deal with nodes to the right of the path
             if path == LEFT or path == INNER and (right_part or neither):
@@ -440,61 +440,51 @@ class SinglePathFunction(object):
                 self.calculate_dist = bool(v)
 
                 #r = a. l = b
-                result = self.loop_b(rf_range, lf_first, lf_last, LEFT, 0)
+                result = self.loop_b(rf_range, lf_first, lf_last, LEFT)
         return result
 
-    def loop_b(self, af_range, bf_first, bf_last, path, delta):
+    def loop_b(self, af_range, bf_first, bf_last, path):
         """Loop B [1, Algoritm 3] - for all nodes in G (right-hand input tree)."""
         current2, bta_2 = self.current2, self.bta_2
-        fn, ft = self.fn, self.ft
         atb, bta, lna = self.atb, self.bta, self.lna
         amost_child, bmost_child = self.amost_child, self.bmost_child
         path_type = self.path_type
 
         result = 0
 
-        bg_last = bta(current2)
-        bg_first = bg_last + current2.size - 1
-        fn[-1] = -1
-        for i in range(len(bta_2)):
-            fn[i] = ft[i] = -1
+        self.fn = [-1] * self.max_size
+        self.ft = [-1] * self.max_size
+
         # Store the current size and cost of forest in F.
-        tmp_size1 = self.size1
-        tmp_cost1 = self.cost1
+        tmp_size1, tmp_cost1 = self.size1, self.cost1
 
         g_index = atb(current2)
+        bg_last = bta(current2)
+        bg_first = bg_last + current2.size - 1
 
         for bg in range(bg_first, bg_last - 1, -1):  # Reversed preorder bta
             # bg: pre_rtl_2/pre_ltr_2
             bg_info = bta_2[bg]
-            ag_first = atb(bg_info)
+            bg_atb = atb(bg_info)
             bg_ln = atb(lna(bg_info))
-            self.update_fn_array(bg_ln, ag_first, g_index)
-            self.update_ft_array(bg_ln, ag_first)
+            self.update_fn_array(bg_ln, bg_atb, g_index)
+            self.update_ft_array(bg_ln, bg_atb)
 
             bg_parent = bg_info.parent
-            # This if statement decides on the last ag node for Loop D [1, Algorithm 3];
-            if path_type == path:
+            ag_first = bg_info
+            # This if statement decides on the last ag node for Loop D
+            # [1, Algorithm 3];
+            if False and path_type == path:
                 if bg_info is current2 or bg_info is not bmost_child(bg_parent):
                     ag_last = ag_first
                 else:
-                    ag_last = atb(amost_child(bg_parent))
+                    ag_last = amost_child(bg_parent)
             else:
-                last = current2
-                if bg_info is not current2 and delta: # flag
-                    last = amost_child(last)
-                ag_last = atb(last)
-            """
-
-            if path_type == path:
-                if bg_info is current2 or bg_info is not bmost_child(bg_parent):
-                    ag_last = atb(bta_2[-1])
+                if bg_info is current2:
+                    ag_last = current2
                 else:
-                    ag_last = atb(bg_parent) + 1
-            else:
-                ag_last = g_index + int(ag_first != g_index) * delta  # flag
+                    ag_last = amost_child(current2)
 
-            """
 
             # B: {rw} \\cup left(G',rw) in reverse LTR preorder
             # B': {lw} \\cup right(G',lw) in reverse RTL preorder
@@ -540,7 +530,7 @@ class SinglePathFunction(object):
         # B: foreach lw in {rw} \\cup left(G', rw) in reverse LTR preorder
         # B': foreach rw in {lw} \\cup right(G', lw) in reverse RTL preorder
         # : first pointers can be precomputed
-        for ag in ag_range:
+        for ag, _ in ag_range:
             lg, rg = left_right(ag, bg)
             t[lg - loff2][rg - roff2] = s[af_last - off1][ag - doff2]
 
@@ -550,8 +540,7 @@ class SinglePathFunction(object):
         C': foreach node rv in right(F_p(v), v) \\cup {p(v)} in reverse RTL pre
         """
         # pylint: disable=cell-var-from-loop
-        atb_1, atb_2 = self.atb_1, self.atb_2
-        atb, bta = self.atb, self.bta
+        atb, bta, atb_1 = self.atb, self.bta, self.atb_1
         fix_bf, calculate_dist = self.fix_bf, self.calculate_dist
         start_index = atb(self.start)
         loff2, roff2, doff2 = self.it2_loff, self.it2_roff, self.it2_doff
@@ -600,7 +589,7 @@ class SinglePathFunction(object):
             sp1_s = self.s[af + 1 - off1]
             self.sp1_func = {
                 1: lambda ag: sp1_s[ag - doff2],
-                2: lambda ag:get(t, ag, bg, left_right, -loff2, -roff2),
+                2: lambda ag: get(t, ag, bg, left_right, -loff2, -roff2),
                 3: lambda ag: self.cost2,
             }[sp1source]
 
@@ -626,11 +615,11 @@ class SinglePathFunction(object):
             self.sp3_pre = lambda bg_pre: get(delta, af_pre, bg_pre, swap)
 
 
-            result = self.loop_d(self.s[af - off1], atb_2, ag_range, af_node)
+            result = self.loop_d(self.s[af - off1], ag_range, af_node)
 
         return result
 
-    def loop_d(self, swrite, atb_2, ag_range, f_node):
+    def loop_d(self, swrite, ag_range, f_node):
         """Loop D of [1, Algorithm 3]
         D: foreach node lw in {rw} \\cup left(G', rw) in reverse LTR preorder
         D': foreach node rw in {lw} \\cup rigth(G', lw) in reverse RTL preorder
@@ -639,8 +628,7 @@ class SinglePathFunction(object):
         result = 0
         iterator = iter(ag_range)
         # First iteration
-        ag = next(iterator)
-        ag_info = atb_2[ag]
+        ag, ag_info = next(iterator)
         ag_node = ag_info.node
         self.cost2 += self.sum_ins_cost(ag_info)
         result = swrite[ag - doff2] = self.calculate_min_loop_d(
@@ -651,8 +639,7 @@ class SinglePathFunction(object):
         self.sp3_func = self.sp3_func_after
 
         # Other iterations
-        for ag in iterator:
-            ag_info = atb_2[ag]
+        for ag, ag_info in iterator:
             ag_node = ag_info.node
             self.cost2 += self.insert(ag_node)
             result = swrite[ag - doff2] = self.calculate_min_loop_d(
@@ -678,16 +665,17 @@ class SinglePathFunction(object):
             self.rename(f_node, g_node),
         )
 
-
     def each_ft(self, start, finish):
         """Iterate on ft array"""
-        ft = self.ft
-        current = start
-        yield current
-        current = ft[current]
-        while current >= finish:
-            yield current
-            current = ft[current]
+        ft, atb, atb_2 = self.ft, self.atb, self.atb_2
+        finish_atb = atb(finish)
+        current, current_atb = start, atb(start)
+        yield current_atb, current
+        current_atb = ft[current_atb]
+        while current_atb >= finish_atb:
+            current = atb_2[current_atb]
+            yield current_atb, current
+            current_atb = ft[current_atb]
 
     def update_fn_array(self, ln_index, node_index, current_index):
         """fn array used in the algorithm before [1]. Using it does not change

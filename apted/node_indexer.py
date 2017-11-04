@@ -432,6 +432,9 @@ class NodeInfo(object):
     def __bool__(self):
         return bool(self.node)
 
+    def __nonzero__(self):
+        return bool(self.node)
+
     @property
     def children(self):
         """Returns node children"""
