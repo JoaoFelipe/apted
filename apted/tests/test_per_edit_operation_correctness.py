@@ -28,7 +28,8 @@ import unittest
 import json
 import os
 
-from ..helpers import Tree, PerEditOperationConfig
+from ..helpers import Tree
+from ..config import PerEditOperationConfig
 from ..apted import APTED
 from ..all_possible_mappings_ted import AllPossibleMappingsTED
 

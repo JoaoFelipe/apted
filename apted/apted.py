@@ -25,9 +25,8 @@
 from __future__ import (absolute_import, division)
 
 import math
-from itertools import chain
 from .node_indexer import NodeIndexer
-from .helpers import Config
+from .config import Config
 from .single_path_functions import spf1, SinglePathFunction, LEFT, RIGHT, INNER
 # pylint: disable=invalid-name
 # pylint: disable=fixme
@@ -124,9 +123,9 @@ class APTED(object):
                 for j in range(size2):
                     # Fix path type
                     if spf_type == LEFT:
-                        self.delta[i][j] = index_1[i].lld.pre_ltr + vcls(1)
+                        self.delta[i][j] = vcls(index_1[i].lld.pre_ltr + 1)
                     elif spf_type == RIGHT:
-                        self.delta[i][j] = index_1[i].rld.pre_ltr + vcls(1)
+                        self.delta[i][j] = vcls(index_1[i].rld.pre_ltr + 1)
             self.ted_init()
             self.result = self.gted()
         return self.result
@@ -439,4 +438,4 @@ class APTED(object):
 
     def mapping_cost(self, mapping):
         """Calculates the cost of an edit mapping"""
-        return self.config.mapping_cost(self, mapping)
+        return self.config.mapping_cost(mapping)

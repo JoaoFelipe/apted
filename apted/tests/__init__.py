@@ -27,3 +27,4 @@
 import unittest
 from .test_correctness import *
 from .test_per_edit_operation_correctness import *
+from .test_chained import *

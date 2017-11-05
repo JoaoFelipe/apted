@@ -23,7 +23,7 @@
 #
 """NodeIndexer and NodeInfo implementations"""
 from __future__ import (absolute_import, division)
-from .helpers import Config
+from .config import Config
 
 
 class NodeIndexer(object):
@@ -163,14 +163,7 @@ class NodeIndexer(object):
         """
 
         current_leaf = NodeInfo.EMPTY
-
-        if self.num == 0:
-            delete = self.config.delete
-            swap = lambda a, b: (a, b)
-        else:
-            delete = self.config.insert
-            swap = lambda a, b: (b, a)
-
+        delete = self.config.insert if self.num else self.config.delete
 
         for i, node in enumerate(self.pre_ltr_info):
             node.pre_rtl = self.tree_size - 1 - node.post_ltr

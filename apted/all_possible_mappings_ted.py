@@ -27,7 +27,7 @@ minimal cost."""
 from __future__ import (absolute_import, division)
 
 from copy import copy
-from .helpers import Config
+from .config import Config
 from .node_indexer import NodeIndexer
 
 

@@ -28,6 +28,7 @@ import json
 import os
 
 from ..helpers import Tree
+from ..config import Config, meta_chained_config
 from ..apted import APTED
 from ..single_path_functions import UseOnlySPFA
 
@@ -35,43 +36,41 @@ def test_factory(test):
     """Creates testcase for test dict"""
     tree1 = Tree.from_text(test["t1"])
     tree2 = Tree.from_text(test["t2"])
+    config = meta_chained_config(Config)()
 
-
-    class TestCorrectness(unittest.TestCase):
+    class TestChained(unittest.TestCase):
         """Correctness unit tests of distance and mapping computation."""
-        def test_parsing_bracket_notation(self):
-            self.assertEqual(test["t1"], repr(tree1))
-            self.assertEqual(test["t2"], repr(tree2))
-
         def test_distance_unit_cost(self):
-            apted = APTED(tree1, tree2)
-            self.assertEqual(test["d"], apted.compute_edit_distance())
+            apted = APTED(tree1, tree2, config)
+            self.assertEqual(test["d"], apted.compute_edit_distance().value)
 
-            apted = APTED(tree2, tree1)
-            self.assertEqual(test["d"], apted.compute_edit_distance())
+            apted = APTED(tree2, tree1, config)
+            self.assertEqual(test["d"], apted.compute_edit_distance().value)
 
         def test_distance_unit_cost_spf_l(self):
-            apted = APTED(tree1, tree2)
-            self.assertEqual(test["d"], apted.compute_edit_distance_spf_test(0))
+            apted = APTED(tree1, tree2, config)
+            self.assertEqual(
+                test["d"], apted.compute_edit_distance_spf_test(0).value)
 
         def test_distance_unit_cost_spf_r(self):
-            apted = APTED(tree1, tree2)
-            self.assertEqual(test["d"], apted.compute_edit_distance_spf_test(1))
+            apted = APTED(tree1, tree2, config)
+            self.assertEqual(
+                test["d"], apted.compute_edit_distance_spf_test(1).value)
 
         def test_distance_unit_cost_spf_a(self):
-            apted = APTED(tree1, tree2, spf=UseOnlySPFA)
-            self.assertEqual(test["d"], apted.compute_edit_distance())
+            apted = APTED(tree1, tree2, config, spf=UseOnlySPFA)
+            self.assertEqual(test["d"], apted.compute_edit_distance().value)
 
-            apted = APTED(tree2, tree1, spf=UseOnlySPFA)
-            self.assertEqual(test["d"], apted.compute_edit_distance())
+            apted = APTED(tree2, tree1, config, spf=UseOnlySPFA)
+            self.assertEqual(test["d"], apted.compute_edit_distance().value)
 
         def test_mapping_cost_unit(self):
-            apted = APTED(tree1, tree2)
+            apted = APTED(tree1, tree2, config)
             mapping = apted.compute_edit_mapping()
             self.assertEqual(test["d"], apted.mapping_cost(mapping))
 
     return type(
-        "TestCorrectness{}".format(test["testID"]), (TestCorrectness,), {}
+        "TestChained{}".format(test["testID"]), (TestChained,), {}
     )
 
 

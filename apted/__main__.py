@@ -136,11 +136,15 @@ def main():
         print(ted)
 
     if namespace.mapping:
+        pre_ltr_1, pre_ltr_2 = apted.it1.pre_ltr_info, apted.it2.pre_ltr_info
         mapping = apted.compute_edit_mapping()
         for node1, node2 in mapping:
-            print(node1, "->", node2)
-
-
+            if not namespace.verbose:
+                value1 = pre_ltr_1[node1.index].post_ltr + 1 if node1 else 0
+                value2 = pre_ltr_2[node2.index].post_ltr + 1 if node2 else 0
+                print(value1, "->", value2)
+            else:
+                print(node1, "->", node2)
 
 if __name__ == '__main__':
     main()
