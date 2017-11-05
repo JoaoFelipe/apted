@@ -29,9 +29,13 @@ same interface"""
 from __future__ import (absolute_import, division)
 
 from collections import deque
+from itertools import chain
+
 
 class Config(object):
     """Algorithm configuration"""
+
+    valuecls = int
 
     def delete(self, node):
         """Calculates the cost of deleting a node"""
@@ -50,9 +54,28 @@ class Config(object):
         """Returns children of node"""
         return getattr(node, 'children', [])
 
+    def mapping_cost(self, apted, mapping):
+        """Calculates the cost of an edit mapping. It traverses the mapping and
+        sums up the cost of each operation. The costs are taken from the cost
+        model."""
+        delete, insert = self.delete, self.insert
+        rename = self.rename
+        cost = 0
+        for row, col in mapping:
+            if row is None: # insertion
+                cost += insert(col.node)
+            elif col is None: # deletion
+                cost += delete(row.node)
+            else:
+                cost += rename(row.node, col.node)
+        return cost
+
+
 
 class PerEditOperationConfig(Config):
     """Algorithm configuration"""
+
+    valuecls = int
 
     def __init__(self, del_cost, ins_cost, ren_cost):
         self.del_cost = del_cost
@@ -74,6 +97,124 @@ class PerEditOperationConfig(Config):
             super(PerEditOperationConfig, self).rename(node1, node2) *
             self.ren_cost
         )
+
+
+class ChainedValue(object):
+    """Represents a chained value"""
+    # pylint: disable=too-few-public-methods
+
+    def __init__(self, value=0, chain_=None):
+        self.value = value
+        self.chain = chain_ or []
+
+    def __add__(self, other):
+        return ChainedValue(
+            self.value + other.value, chain(self.chain, other.chain)
+        )
+
+    def __sub__(self, other):
+        return ChainedValue(
+            self.value - other.value, chain(self.chain, [("R", other.chain)])
+        )
+
+    def __neg__(self):
+        return ChainedValue(
+            -self.value, [("R", self.chain)]
+        )
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def __nonzero__(self):
+        return bool(self.value)
+
+    def __repr__(self):
+        return repr(self.value)
+
+    def __str__(self):
+        return str(self.value)
+
+    def __hash__(self):
+        return hash(self.value)
+
+    def __lt__(self, other):
+        return self.value < other.value
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+    def __int__(self):
+        return self.value
+
+
+def meta_chained_config(config_cls):
+    """Creates a config class that keeps track of the chain"""
+    class ChainedConfig(config_cls):
+        """Chained config class"""
+
+        valuecls = ChainedValue
+
+        def delete(self, node):
+            """Calculates the cost of deleting a node"""
+            return ChainedValue(
+                super(ChainedConfig, self).delete(node),
+                [(node, None)]
+            )
+
+        def insert(self, node):
+            """Calculates the cost of inserting a node"""
+            return ChainedValue(
+                super(ChainedConfig, self).insert(node),
+                [(None, node)]
+            )
+
+        def rename(self, node1, node2):
+            """Calculates the cost of renaming the label of the source node
+            to the label of the destination node"""
+            return ChainedValue(
+                super(ChainedConfig, self).rename(node1, node2),
+                [(node1, node2)]
+            )
+
+        def compute_edit_mapping(self, apted):
+            """Compute the edit mapping between two trees.
+
+            Returns list of pairs of nodes that are mapped as pairs
+            Nodes that are delete or inserted are mapped to None
+            """
+            value = apted.compute_edit_distance()
+            if apted.mapping is None:
+                result = set()
+                rem_list = set()
+                for pair in value.chain:
+                    if pair[0] == "R":
+                        for rem_pair in pair[1]:
+                            try:
+                                result.remove(rem_pair)
+                            except KeyError:
+                                rem_list.add(rem_pair)
+                    elif pair not in rem_list:
+                        result.add(pair)
+                    else:
+                        rem_list.remove(pair)
+                apted.mapping = result
+            return apted.mapping
+
+        def mapping_cost(self, apted, mapping):
+            """Calculates the cost of an edit mapping. It traverses the mapping and
+            sums up the cost of each operation. The costs are taken from the cost
+            model."""
+            cost = 0
+            for row, col in mapping:
+                if row is None: # insertion
+                    cost += config_cls.insert(self, col)
+                elif col is None: # deletion
+                    cost += config_cls.delete(self, row)
+                else:
+                    cost += config_cls.rename(self, row, col)
+            return cost
+
+    return ChainedConfig
 
 
 class Tree(object):

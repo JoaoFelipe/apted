@@ -23,6 +23,7 @@
 #
 """NodeIndexer and NodeInfo implementations"""
 from __future__ import (absolute_import, division)
+from .helpers import Config
 
 
 class NodeIndexer(object):
@@ -83,7 +84,7 @@ class NodeIndexer(object):
         self.rchl = 0
 
         root, _ = self.index_nodes(tree, -1)
-        root.parent = NodeInfo(None, -1)
+        root.parent = NodeInfo(None, -1, self.config)
         root.parent.num = num
         root.parent.fake_child = root
 
@@ -110,7 +111,7 @@ class NodeIndexer(object):
         """
         desc_sizes = current_size = kr_sizes_sum = revkr_sizes_sum = 0
 
-        node_info = NodeInfo(node, self.preorder_tmp)
+        node_info = NodeInfo(node, self.preorder_tmp, self.config)
         node_info.num = self.num
         self.preorder_tmp += 1
         self.pre_ltr_info.append(node_info)
@@ -198,11 +199,8 @@ class NodeIndexer(object):
             sum_parent = sum_node.parent
             # Update myself
             sum_node.sum_cost += delete(sum_node.node)
-            sum_node.sum_chain += [swap(sum_node, None)]
-
             if sum_parent:
                 sum_parent.sum_cost += sum_node.sum_cost
-                sum_parent.sum_chain += sum_node.sum_chain
 
 
         current_leaf = NodeInfo.EMPTY
@@ -263,9 +261,12 @@ class NodeInfo(object):
 
     EMPTY = None
 
-    def __init__(self, node, preorder):
+    def __init__(self, node, preorder, config=Config):
         if node:
             node.index = preorder
+
+        # Config obj/cls
+        self.config = config
 
         # Node referred by this info
         self.node = node
@@ -324,10 +325,7 @@ class NodeInfo(object):
         self.rld = self.EMPTY
 
         # Cost of deleting/inserting all nodes in the subtree rooted at this node
-        self.sum_cost = 0
-
-        # Chain of operations for sum_del_cost
-        self.sum_chain = []
+        self.sum_cost = config.valuecls()
 
         # Overrides leftmost and rightmost child
         self.fake_child = None
@@ -353,7 +351,7 @@ class NodeInfo(object):
         """Returns rightmost child"""
         children = self.children
         if not children:
-            return NodeInfo(None, -1)
+            return NodeInfo(None, -1, self.config)
         return children[-1]
 
     @property
@@ -361,7 +359,7 @@ class NodeInfo(object):
         """Returns leftmost child"""
         children = self.children
         if not children:
-            return NodeInfo(None, -1)
+            return NodeInfo(None, -1, self.config)
         return children[0]
 
     def __repr__(self):

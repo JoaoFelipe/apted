@@ -26,7 +26,6 @@ from __future__ import (absolute_import, division)
 
 import math
 from itertools import chain
-from numpy import zeros
 from .node_indexer import NodeIndexer
 from .helpers import Config
 from .single_path_functions import spf1, SinglePathFunction, LEFT, RIGHT, INNER
@@ -36,11 +35,11 @@ from .single_path_functions import spf1, SinglePathFunction, LEFT, RIGHT, INNER
 class Cost(object):
     """Represents a Cost for opt strategy calculation"""
     # pylint: disable=too-few-public-methods
-    def __init__(self):
+    def __init__(self, vcls):
         self.l = 0.0
         self.r = 0.0
         self.i = 0.0
-        self.path = 0
+        self.path = vcls()
 
     def set_lri(self, value):
         """Sets l, r, and i values"""
@@ -78,7 +77,6 @@ class APTED(object):
         # The distance matrix [1, Sections 3.4,8.2,8.3]
         # Used to store intermediate distances between pairs of subtrees
         self.delta = []
-        self.dchain = []
 
         # Stores the number of subproblems encountered while computing the
         # distance. See [1, Section 10].
@@ -92,7 +90,6 @@ class APTED(object):
 
         # Stores the result
         self.result = None
-        self.tmapping = None
         self.mapping = None
 
 
@@ -102,12 +99,12 @@ class APTED(object):
         # Initialize delta array
         if self.result is None:
             if self.it1.lchl < self.it1.rchl:
-                self.delta, self.dchain = self.compute_opt_strategy_post_l()
+                self.delta = self.compute_opt_strategy_post_l()
             else:
-                self.delta, self.dchain = self.compute_opt_strategy_post_r()
+                self.delta = self.compute_opt_strategy_post_r()
 
             self.ted_init()
-            self.result, _, self.tmapping = self.gted()
+            self.result = self.gted()
         return self.result
 
     def compute_edit_distance_spf_test(self, spf_type):
@@ -116,11 +113,10 @@ class APTED(object):
         single-path function"""
         # Initialise delta array.
         if self.result is None:
-            index_1 = self.it1.pre_ltr_info
+            index_1, vcls = self.it1.pre_ltr_info, self.config.valuecls
             size1, size2 = self.it1.tree_size, self.it2.tree_size
-            self.delta = zeros((size1, size2), float)
-            self.dchain = [
-                [[] for _ in range(size2)]
+            self.delta = [
+                [vcls() for _ in range(size2)]
                 for _ in range(size1)
             ]
             # Fix a path type to trigger specific spf.
@@ -128,19 +124,19 @@ class APTED(object):
                 for j in range(size2):
                     # Fix path type
                     if spf_type == LEFT:
-                        self.delta[i][j] = index_1[i].lld.pre_ltr + 1
+                        self.delta[i][j] = index_1[i].lld.pre_ltr + vcls(1)
                     elif spf_type == RIGHT:
-                        self.delta[i][j] = index_1[i].rld.pre_ltr + 1
+                        self.delta[i][j] = index_1[i].rld.pre_ltr + vcls(1)
             self.ted_init()
-            self.result, _, self.tmapping = self.gted()
+            self.result = self.gted()
         return self.result
 
     def ted_init(self):
         """After the optimal strategy is computed, initializes distances of
         deleting and inserting subtrees without their root nodes."""
-        it1, it2 = self.it1, self.it2
+        it1, it2, vcls = self.it1, self.it2, self.config.valuecls
 
-        delta, dchain = self.delta, self.dchain
+        delta = self.delta
         # Reset the subproblems counter.
         self.counter = 0
 
@@ -160,16 +156,11 @@ class APTED(object):
                 # input trees because it is equal to the original.
                 size2 = node2.size
                 if size1 == 1 and size2 == 1:
-                    delta[x][y] = 0.0
-                    dchain[x][y] = []
+                    delta[x][y] = vcls(0.0)
                 elif size1 == 1:
                     delta[x][y] = node2.sum_cost - insert(node2.node)
-                    dchain[x][y] = chain(node2.sum_chain,
-                                         [("R", [(None, node2)])])
                 elif size2 == 1:
                     delta[x][y] = node1.sum_cost - delete(node1.node)
-                    dchain[x][y] = chain(node1.sum_chain,
-                                         [("R", [(node1, None)])])
 
     def compute_opt_strategy_post_l(self):
         """Compute the optimal strategy using left-to-right postorder traversal
@@ -236,16 +227,15 @@ class APTED(object):
         # pylint: disable=no-self-use
         # pylint: disable=too-many-locals
         # pylint: disable=cell-var-from-loop
-        it1, it2 = self.it1, self.it2
+        it1, it2, vcls = self.it1, self.it2, self.config.valuecls
         size1, size2 = it1.tree_size, it2.tree_size
-        strategy = zeros((size1, size2), float)
-        delta_chain = [
-            [["R"] for _ in range(size2)]
+        strategy = [
+            [vcls() for _ in range(size2)]
             for _ in range(size1)
         ]
         cost1 = [None] * size1
 
-        leaf_row = [Cost() for _ in range(size2)]
+        leaf_row = [Cost(vcls) for _ in range(size2)]
 
         path_id_offset = size1
         min_cost = float('inf')
@@ -269,17 +259,17 @@ class APTED(object):
 
             # this is the left path's ID which is the leftmost leaf node:
             # l-r_preorder(r-l_preorder(v) + |Fv| - 1)
-            left_path_v = -(pre_rtl_1[node1.pre_rtl + size_v - 1].pre_ltr + 1)
+            left_path_v = vcls(-(pre_rtl_1[node1.pre_rtl + size_v - 1].pre_ltr + 1))
             # this is the right path's ID which is the rightmost leaf node:
             # l-r_preorder(v) + |Fv| - 1
-            right_path_v = v_in_pre_ltr + size_v
+            right_path_v = vcls(v_in_pre_ltr + size_v)
 
 
             if not node1.children:
                 cost_pointer_v = cost1[v_cost] = leaf_row
                 for node2 in order2:
                     w_cost, w_pre = costi(node2), node2.pre_ltr
-                    strategy_v[w_pre] = cost_pointer_v[w_cost].path = v_in_pre_ltr
+                    strategy_v[w_pre] = cost_pointer_v[w_cost].path = vcls(v_in_pre_ltr)
             else:
                 cost_pointer_v = cost1[v_cost]
 
@@ -289,11 +279,11 @@ class APTED(object):
                     if rows_to_reuse:
                         cost1[parent_v] = rows_to_reuse.pop()
                     else:
-                        cost1[parent_v] = [Cost() for _ in range(size2)]
+                        cost1[parent_v] = [Cost(vcls) for _ in range(size2)]
 
                 cost_pointer_parent_v = cost1[parent_v]
 
-            cost2 = [Cost() for _ in range(size2)]
+            cost2 = [Cost(vcls) for _ in range(size2)]
 
             for node2 in order2:
                 w_cost = costi(node2)
@@ -307,7 +297,7 @@ class APTED(object):
                 size_w = node2.size
                 if not node2.children:
                     cost_pointer_w.set_lri(0)
-                    cost_pointer_w.path = w_in_pre_ltr
+                    cost_pointer_w.path = vcls(w_in_pre_ltr)
 
                 if size_v <= 1 or size_w <= 1:
                     min_cost = max(size_v, size_w)
@@ -324,20 +314,22 @@ class APTED(object):
                         ),
                         (
                             size_v * node2.desc_sum + cost_pointer_vw.i, 3,
-                            lambda: cost_pointer_vw.path + 1
+                            lambda: cost_pointer_vw.path + vcls(1)
                         ),
                         (
                             size_w * kr_sum_v + cost_pointer_w.l, 4,
-                            lambda: -(pre_rtl_2[node2.pre_rtl + size_w - 1].pre_ltr +
-                                      path_id_offset + 1)
+                            lambda: vcls(
+                                - pre_rtl_2[node2.pre_rtl + size_w - 1].pre_ltr
+                                - path_id_offset - 1
+                            )
                         ),
                         (
                             size_w * rev_kr_sum_v + cost_pointer_w.r, 5,
-                            lambda: w_in_pre_ltr + size_w + path_id_offset
+                            lambda: vcls(w_in_pre_ltr + size_w + path_id_offset)
                         ),
                         (
                             size_w * desc_sum_v + cost_pointer_w.i, 6,
-                            lambda: cost_pointer_w.path + path_id_offset + 1
+                            lambda: cost_pointer_w.path + vcls(path_id_offset + 1)
                         )
                     )
                     strategy_path = strategy_fn()
@@ -363,21 +355,20 @@ class APTED(object):
                     cost.set_lri(0)
                 rows_to_reuse.append(cost_pointer_v)
 
-        return strategy, delta_chain
+        return strategy
 
     def gted(self, data=None):
         """Implements GTED algorithm [1, Section 3.4].
 
         Return the tree edit distance between the source and destination trees.
         """
-        it1, it2, dchain = self.it1, self.it2, self.dchain
+        it1, it2 = self.it1, self.it2
         data = data or [it1.pre_ltr_info[0], it2.pre_ltr_info[0]]
         tree1, tree2 = data
 
         if tree1.size == 1 or tree2.size == 1:  # Use spf1
-            result = dv, dx, dc = spf1(it1, it2, self.config, tree1, tree2)
-            self.delta[tree1.pre_ltr][tree2.pre_ltr] = dv
-            dchain[tree1.pre_ltr][tree2.pre_ltr] = dc
+            result = spf1(it1, it2, self.config, tree1, tree2)
+            self.delta[tree1.pre_ltr][tree2.pre_ltr] = result
             return result
 
         path_id = int(self.delta[tree1.pre_ltr][tree2.pre_ltr])
@@ -444,37 +435,8 @@ class APTED(object):
         Returns list of pairs of nodes that are mapped as pairs
         Nodes that are delete or inserted are mapped to None
         """
-        if self.tmapping is None:
-            self.compute_edit_distance()
-        if self.mapping is None:
-            result = set()
-            rem_list = set()
-            for pair in self.tmapping:
-                if pair[0] == "R":
-                    for rem_pair in pair[1]:
-                        try:
-                            result.remove(rem_pair)
-                        except KeyError:
-                            rem_list.add(rem_pair)
-                elif pair not in rem_list:
-                    result.add(pair)
-                else:
-                    rem_list.remove(pair)
-            self.mapping = result
-        return self.mapping
+        return self.config.compute_edit_mapping(self)
 
     def mapping_cost(self, mapping):
-        """Calculates the cost of an edit mapping. It traverses the mapping and
-        sums up the cost of each operation. The costs are taken from the cost
-        model."""
-        delete, insert = self.config.delete, self.config.insert
-        rename = self.config.rename
-        cost = 0
-        for row, col in mapping:
-            if row is None: # insertion
-                cost += insert(col.node)
-            elif col is None: # deletion
-                cost += delete(row.node)
-            else:
-                cost += rename(row.node, col.node)
-        return cost
+        """Calculates the cost of an edit mapping"""
+        return self.config.mapping_cost(self, mapping)

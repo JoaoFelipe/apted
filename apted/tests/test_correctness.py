@@ -27,7 +27,7 @@ import unittest
 import json
 import os
 
-from ..helpers import Tree
+from ..helpers import Tree, Config, meta_chained_config
 from ..apted import APTED
 from ..single_path_functions import UseOnlySPFA
 
@@ -66,7 +66,7 @@ def test_factory(test):
             self.assertEqual(test["d"], apted.compute_edit_distance())
 
         def test_mapping_cost_unit(self):
-            apted = APTED(tree1, tree2)
+            apted = APTED(tree1, tree2, meta_chained_config(Config)())
             mapping = apted.compute_edit_mapping()
             self.assertEqual(test["d"], apted.mapping_cost(mapping))
 
