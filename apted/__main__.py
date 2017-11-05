@@ -22,7 +22,7 @@
 # SOFTWARE.
 #
 """This is the command line interface for executing APTED algorithm."""
-from __future__ import (absolute_import, division)
+from __future__ import (absolute_import, division, print_function)
 
 import argparse
 import time
@@ -51,9 +51,9 @@ LICENSE
 
 EXAMPLES
 
-    apted -t {a{b}{c}} {a{b{d}}}
-    apted -f 1.tree 2.tree
-    apted -t {a{b}{c}} {a{b{d}}} -m -v
+    python -m apted -t {a{b}{c}} {a{b{d}}}
+    python -m apted -f 1.tree 2.tree
+    python -m apted -t {a{b}{c}} {a{b{d}}} -m -v
 
 REFERENCES
 
