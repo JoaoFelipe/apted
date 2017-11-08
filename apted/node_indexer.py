@@ -72,6 +72,9 @@ class NodeIndexer(object):
         # Map right-to-left preorder index to NodeInfo
         self.pre_rtl_info = []
 
+        # Map node object id to Info
+        self.node_info = {}
+
         # Size of input tree
         self.tree_size = 0
 
@@ -113,6 +116,7 @@ class NodeIndexer(object):
 
         node_info = NodeInfo(node, self.preorder_tmp, self.config)
         node_info.num = self.num
+        self.node_info[id(node)] = node_info
         self.preorder_tmp += 1
         self.pre_ltr_info.append(node_info)
 
@@ -255,9 +259,6 @@ class NodeInfo(object):
     EMPTY = None
 
     def __init__(self, node, preorder, config=Config):
-        if node:
-            node.index = preorder
-
         # Config obj/cls
         self.config = config
 

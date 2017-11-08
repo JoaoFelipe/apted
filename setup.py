@@ -19,7 +19,7 @@ def recursive_path(pack, path):
 
 setup(
     name="apted",
-    version="1.0.0",
+    version="1.0.1",
     description="APTED algorithm for the Tree Edit Distance",
     long_description=LONG,
     packages=find_packages(),
