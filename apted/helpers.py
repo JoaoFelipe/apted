@@ -40,13 +40,20 @@ class ChainedValue(object):
         self.chain = chain_ or []
 
     def __add__(self, other):
-        return ChainedValue(
-            self.value + other.value, chain(self.chain, other.chain)
-        )
+        if not self.chain:
+            chain_ = other.chain
+        elif not other.chain:
+            chain_ = self.chain
+        else:
+            chain_ = chain(self.chain, other.chain)
+        return ChainedValue(self.value + other.value, chain_)
 
     def __sub__(self, other):
+        chain_ = [("R", other.chain)]
+        if self.chain:
+            chain_ = chain(self.chain, chain_)
         return ChainedValue(
-            self.value - other.value, chain(self.chain, [("R", other.chain)])
+            self.value - other.value, chain(self.chain, chain_)
         )
 
     def __neg__(self):

@@ -230,14 +230,14 @@ def meta_chained_config(config_cls):
             """Calculates the cost of deleting a node"""
             return ChainedValue(
                 super(ChainedConfig, self).delete(node),
-                [(node, None)]
+                [(id(node), None)]
             )
 
         def insert(self, node):
             """Calculates the cost of inserting a node"""
             return ChainedValue(
                 super(ChainedConfig, self).insert(node),
-                [(None, node)]
+                [(None, id(node))]
             )
 
         def rename(self, node1, node2):
@@ -245,7 +245,7 @@ def meta_chained_config(config_cls):
             to the label of the destination node"""
             return ChainedValue(
                 super(ChainedConfig, self).rename(node1, node2),
-                [(node1, node2)]
+                [(id(node1), id(node2))]
             )
 
         def compute_edit_mapping(self, apted):
@@ -256,6 +256,7 @@ def meta_chained_config(config_cls):
             """
             # pylint: disable=no-self-use
             value = apted.compute_edit_distance()
+            node_1, node_2 = apted.it1.node_info, apted.it2.node_info
             if apted.mapping is None:
                 result = set()
                 rem_list = set()
@@ -270,7 +271,16 @@ def meta_chained_config(config_cls):
                         result.add(pair)
                     else:
                         rem_list.remove(pair)
-                apted.mapping = result
+
+                mapping = set()
+                for id1, id2 in result:
+                    mapping.add((
+                        getattr(node_1.get(id1), 'node', None),
+                        getattr(node_2.get(id2), 'node', None)
+                    ))
+
+                apted.mapping = mapping
+
             return apted.mapping
 
         def mapping_cost(self, mapping):
